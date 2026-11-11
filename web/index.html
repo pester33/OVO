@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>OvO — Web</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+<canvas id="editor" hidden></canvas>
+
+<!-- HUD -->
+<div id="hud" hidden>
+  <div class="hud-left">
+    <button class="icon" id="btnPause" aria-label="Pause">II</button>
+    <div id="hudLevel">1</div>
+  </div>
+  <div class="hud-right"><span id="hudCoin" hidden>©</span><span id="hudDeaths">0</span><span id="hudTime">0.00</span></div>
+</div>
+
+<!-- touch controls -->
+<div id="touch" hidden>
+  <div class="tpad left">
+    <div class="tbtn" data-k="l">◀</div>
+    <div class="tbtn" data-k="r">▶</div>
+  </div>
+  <div class="tpad right">
+    <div class="tbtn" data-k="d">▼</div>
+    <div class="tbtn big" data-k="u">▲</div>
+  </div>
+</div>
+
+<div id="rotateHint" hidden>↻ Rotate your phone for a bigger view</div>
+
+<!-- screens -->
+<div id="screens">
+  <section id="scrMenu" class="screen">
+    <div class="title">OvO</div>
+    <div class="subtitle">web edition</div>
+    <div class="menu-btns">
+      <button data-go="levels">Play</button>
+      <button data-go="custom">Custom levels</button>
+      <button data-go="options">Options</button>
+    </div>
+    <div class="foot">Arrows / WASD to move · Up / Space to jump · Down to slide, dive &amp; pound · R to restart</div>
+  </section>
+
+  <section id="scrLevels" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Levels</h2><span></span></div>
+    <div id="sections" class="scroll"></div>
+  </section>
+
+  <section id="scrCustom" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Custom levels</h2><span></span></div>
+    <div class="scroll">
+      <div class="row-btns">
+        <button id="btnNewLevel">+ New level</button>
+        <button id="btnImport">Import code</button>
+        <label class="filebtn">Import file<input type="file" id="fileImport" accept=".json,.ovo,application/json" hidden></label>
+      </div>
+      <h3>My levels</h3>
+      <div id="myLevels" class="cards"></div>
+      <h3>Featured</h3>
+      <div id="featuredLevels" class="cards"></div>
+    </div>
+  </section>
+
+  <section id="scrOptions" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Options</h2><span></span></div>
+    <div class="scroll opts">
+      <label><input type="checkbox" id="optSfx" checked> Sound effects</label>
+      <label><input type="checkbox" id="optMusic" checked> Music</label>
+      <label><input type="checkbox" id="optHard"> Hard mode (extra spikes)</label>
+      <label>Touch controls
+        <select id="optTouch"><option value="auto">Auto</option><option value="on">Always on</option><option value="off">Off</option></select>
+      </label>
+      <label>Touch button size
+        <input type="range" id="optTouchSize" min="0.7" max="1.5" step="0.05" value="1">
+      </label>
+      <button id="btnFullscreen">Toggle fullscreen</button>
+      <button id="btnResetProgress" class="danger">Reset progress</button>
+    </div>
+  </section>
+
+  <!-- editor UI -->
+  <section id="scrEditor" class="screen editor-ui" hidden>
+    <div class="ed-top">
+      <button class="back" id="edBack">‹</button>
+      <input id="edName" maxlength="40" placeholder="Level name">
+      <button id="edUndo" title="Undo">↶</button>
+      <button id="edRotate" title="Rotate (Q)">⟳ <span id="edRotVal">0°</span></button>
+      <button id="edSave">Save</button>
+      <button id="edTest" class="primary">▶ Test</button>
+    </div>
+    <div class="ed-tools" id="edTools"></div>
+    <div class="ed-zoom"><button id="edZoomIn">+</button><button id="edZoomOut">−</button><button id="edMore">⋯</button></div>
+    <div class="ed-hint" id="edHint"></div>
+  </section>
+</div>
+
+<!-- dialogs -->
+<div id="dlg" class="dlg" hidden><div class="dlg-box" id="dlgBox"></div></div>
+
+<script src="levels.js"></script>
+<script src="featured.js"></script>
+<script src="engine.js"></script>
+<script src="editor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+/* Featured custom levels bundled with the game (same format players save/share). */
+window.OVO_FEATURED = [
+  {
+    v: 1, id: 'feat-1', name: 'First Steps', author: 'Pester',
+    objs: [
+      ['Solid', 0, 480, 1200, 160, 0], ['Solid', 1360, 480, 700, 160, 0], ['Solid', 1200, 608, 160, 32, 0],
+      ['Spike', 1216, 592, 32, 32, 0], ['Spike', 1248, 592, 32, 32, 0], ['Spike', 1280, 592, 32, 32, 0], ['Spike', 1312, 592, 32, 32, 0], ['Spike', 1344, 592, 32, 32, 0],
+      ['Collider', 112, 448, 32, 64, 0],
+      ['Text', 32, 300, 320, 40, 0, { tx: 'A custom level! Made in the editor.', sc: 1, al: 50 }],
+      ['Spike', 592, 464, 32, 32, 0], ['Spike', 624, 464, 32, 32, 0], ['Spike', 656, 464, 32, 32, 0],
+      ['Solid', 848, 400, 96, 80, 0],
+      ['Text', 1180, 380, 220, 40, 0, { tx: 'Mind the gap', sc: 1, al: 50 }],
+      ['JumpBoost', 1520, 464, 32, 32, 0],
+      ['JumpThrough', 1584, 256, 192, 8, 0],
+      ['Coin', 1680, 200, 64, 64, 0],
+      ['EndFlag', 1904, 381, 97, 199, 0],
+    ],
+  },
+  {
+    v: 1, id: 'feat-2', name: 'Slide & Smash', author: 'Pester',
+    objs: [
+      ['Solid', 0, 480, 900, 160, 0], ['Collider', 96, 448, 32, 64, 0],
+      ['Text', 40, 320, 300, 40, 0, { tx: 'Run, then press Down to slide', sc: 1, al: 50 }],
+      ['Solid', 560, 160, 320, 280, 0],
+      ['GroundPoundSolid', 900, 480, 160, 16, 0],
+      ['Text', 860, 380, 260, 40, 0, { tx: 'Jump + Down here to pound', sc: 1, al: 50 }],
+      ['Solid', 1060, 480, 560, 128, 0], ['Solid', 1588, 160, 32, 320, 0],
+      ['Spike', 1520, 464, 32, 32, 0], ['Spike', 1552, 464, 32, 32, 0],
+      ['Coin', 1460, 420, 64, 64, 0],
+      ['Solid', 868, 496, 32, 304, 0], ['Solid', 868, 800, 900, 48, 0], ['Solid', 1736, 480, 32, 320, 0],
+      ['Spike', 1120, 784, 32, 32, 0], ['Spike', 1152, 784, 32, 32, 0],
+      ['JumpThrough', 1260, 720, 96, 8, 0],
+      ['EndFlag', 1660, 701, 97, 199, 0],
+    ],
+  },
+  {
+    v: 1, id: 'feat-3', name: 'Tower Portal', author: 'Pester',
+    objs: [
+      ['Solid', 0, 1200, 820, 64, 0], ['Collider', 272, 1168, 32, 64, 0],
+      ['Solid', 160, 360, 32, 840, 0], ['Solid', 352, 560, 32, 640, 0],
+      ['Text', 200, 1040, 140, 60, 0, { tx: 'Wall jump up!', sc: 1, al: 50 }],
+      ['Spike', 208, 1184, 32, 32, 0],
+      ['Solid', 352, 544, 360, 32, 0], ['Portal', 672, 512, 8, 64, 0, { id: 0, tg: 1 }],
+      ['Solid', 780, 600, 40, 600, 0],
+      ['Solid', 820, 1200, 1200, 64, 0], ['Portal', 900, 1136, 8, 64, 0, { id: 1, tg: 0 }],
+      ['JumpBoost', 1104, 1184, 32, 32, 0],
+      ['Spike', 1200, 1184, 32, 32, 0], ['Spike', 1232, 1184, 32, 32, 0], ['Spike', 1264, 1184, 32, 32, 0], ['Spike', 1296, 1184, 32, 32, 0], ['Spike', 1328, 1184, 32, 32, 0],
+      ['Coin', 1264, 960, 64, 64, 0],
+      ['Solid', 1500, 1040, 160, 160, 0],
+      ['EndFlag', 1860, 1101, 97, 199, 0],
+    ],
+  },
+];
