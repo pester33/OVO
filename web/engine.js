@@ -27,7 +27,7 @@
       let pool = SFX[name];
       if (!pool) pool = SFX[name] = [];
       let a = pool.find(x => x.paused || x.ended);
-      if (!a) { if (pool.length > 4) return; a = new Audio('assets/sfx/' + name + '.m4a'); pool.push(a); }
+      if (!a) { if (pool.length > 4) return; a = new Audio('assets/sfx/' + name + '.mp3'); pool.push(a); }
       a.volume = vol == null ? 0.5 : vol; a.currentTime = 0; a.play().catch(() => {});
     } catch (e) {}
   }
@@ -36,7 +36,7 @@
     musicName = name;
     if (music) { music.pause(); music = null; }
     if (!musicOn || !name) return;
-    music = new Audio('assets/sfx/' + name + '.m4a'); music.loop = true; music.volume = 0.35;
+    music = new Audio('assets/sfx/' + name + '.mp3'); music.loop = true; music.volume = 0.35;
     music.play().catch(() => {});
   }
 

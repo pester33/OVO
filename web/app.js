@@ -168,7 +168,7 @@
     const url = location.origin + location.pathname + '#level=' + code;
     dialog(`<h2>Share level</h2><p>Send this code (or link) to a friend. They can paste it in “Import code”.</p>
       <textarea id="shareCode" readonly>${code}</textarea>
-      <div class="btns"><button class="primary" data-a="copy">Copy code</button><button data-a="link">Copy link</button><button data-a="file">Download .json</button><button data-a="close">Close</button></div>`, {
+      <div class="btns"><button class="primary" data-a="copy">Copy code</button>${window.top === window ? '<button data-a="link">Copy link</button>' : ''}<button data-a="file">Download .json</button><button data-a="close">Close</button></div>`, {
       copy: b => copy(code, b), link: b => copy(url, b), close: closeDlg,
       file: () => { const blob = new Blob([JSON.stringify({ v: 1, name: data.name, author: data.author || '', objs: data.objs })], { type: 'application/json' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (data.name || 'level').replace(/[^\w\- ]+/g, '') + '.ovo.json'; a.click(); },
