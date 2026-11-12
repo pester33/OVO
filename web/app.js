@@ -9,6 +9,7 @@
   const E = window.OvOEditor;
   const cv = $('#game');
   const game = new OvO.Game(cv);
+  game.mobile = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   const editor = new E.Editor();
   const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 
@@ -224,12 +225,12 @@
   addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (!$('#hud').hidden) {
-      const k = KEYS[e.key]; if (k) { game.input[k] = 1; e.preventDefault(); }
+      const k = KEYS[e.key]; if (k) { if (!e.repeat) game.key(k, 1); e.preventDefault(); }
       if ((e.key === 'r' || e.key === 'R') && !game.won && $('#dlg').hidden) game.restart();
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') { if ($('#dlg').hidden) pause(); else if (dlgCancel) { const f = dlgCancel; closeDlg(); f(); } }
     }
   });
-  addEventListener('keyup', e => { const k = KEYS[e.key]; if (k) game.input[k] = 0; });
+  addEventListener('keyup', e => { const k = KEYS[e.key]; if (k) game.key(k, 0); });
   addEventListener('blur', () => { game.input = { l: 0, r: 0, u: 0, d: 0 }; if (!$('#hud').hidden && $('#dlg').hidden) pause(); });
 
   // ---------- touch controls ----------
@@ -250,7 +251,7 @@
       }
     }
     for (const b of tbtns) b.classList.toggle('on', pressed.has(b.dataset.k));
-    for (const k of ['l', 'r', 'u', 'd']) game.input[k] = pressed.has(k) ? 1 : 0;
+    for (const k of ['l', 'r', 'u', 'd']) game.key(k, pressed.has(k));
   }
   // listen on window so a finger can slide between buttons
   addEventListener('pointerdown', e => { if (touchEl.hidden || e.pointerType === 'mouse' && !touchEl.contains(e.target)) return; if (!e.target.closest('.tbtn')) return; active.set(e.pointerId, { x: e.clientX, y: e.clientY }); refreshTouch(); e.preventDefault(); }, { passive: false });

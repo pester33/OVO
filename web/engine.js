@@ -46,9 +46,8 @@
   function updatePoly(o) {
     const a = o.a, ox = -o.hx * o.w, oy = -o.hy * o.h;
     let local;
-    if (o.tri) { // spike triangle, slightly shrunk for fairness
-      const k = 0.18;
-      local = [[ox + o.w * 0.5, oy + o.h * (0.08 + k)], [ox + o.w * (1 - k), oy + o.h * 0.98], [ox + o.w * k, oy + o.h * 0.98]];
+    if (o.tri) { // spike collision polygon from the original project
+      local = [[ox + o.w * 0.5, oy + o.h * 0.1875], [ox + o.w * 0.90625, oy + o.h], [ox + o.w * 0.09375, oy + o.h]];
     } else local = [[ox, oy], [ox + o.w, oy], [ox + o.w, oy + o.h], [ox, oy + o.h]];
     const pts = local.map(([x, y]) => { const r = rot(x, y, a); return [o.x + r[0], o.y + r[1]]; });
     o.poly = pts;
@@ -125,7 +124,7 @@
       this.objs = def.objs.map(makeObj).filter(o => !(o.hard && !this.opts.hard));
       this.byUid = new Map(); this.objs.forEach(o => o.uid != null && this.byUid.set(o.uid, o));
       this.solids = []; this.hazards = []; this.triggers = []; this.areas = []; this.launchers = [];
-      this.rockets = []; this.coin = null; this.flags = []; this.portals = [];
+      this.rockets = []; this.zones = []; this.coin = null; this.flags = []; this.portals = [];
       this.start = null;
       for (const o of this.objs) {
         updatePoly(o);
@@ -137,14 +136,16 @@
         else if (o.t === 'EndFlag') this.flags.push(o);
         else if (o.t === 'Coin') this.coin = o;
         else if (o.t === 'Portal') this.portals.push(o);
+        else if (o.t === 'Tiledbackground') this.zones.push(o);
         if (['JumpBoost', 'Portal', 'ButtonTrigger', 'Coin', 'EndFlag'].includes(o.t)) this.triggers.push(o);
       }
       if (!this.start) this.start = { x: 100, y: 100 };
       this.setupAreas();
       this.grid = new Grid(192);
       this.dynamic = [];
-      for (const o of this.solids.concat(this.hazards)) (o.pin ? this.dynamic : (this.grid.add(o), null));
-      this.dynamic = this.solids.concat(this.hazards).filter(o => o.pin);
+      const gobj = this.solids.concat(this.hazards, this.zones);
+      for (const o of gobj) if (!o.pin) this.grid.add(o);
+      this.dynamic = gobj.filter(o => o.pin);
       this.stamp = 1;
       this.time = 0;
     }
@@ -227,357 +228,664 @@
   }
 
   // ---------- Game ----------
+  // Player logic is a port of the original OvO event sheets (Player.xml / Gameplay.xml)
+  // running on an emulation of Construct 2's Platform behaviour, at a fixed 60 ticks/second.
+  const TICK = 1 / 60;
+  // collision boxes per collider frame, in local coords (x forward when side = 1, y down), from OvO.caproj
+  const BOX = {
+    stand: [-8, -24, 8, 32],     // frame 0
+    slide: [-12, 8, 20, 32],     // frame 1 (slide / slip)
+    wave: [-8, 0, 8, 32],        // frame 2 (wave dash)
+    dive0: [-12, 8, 32, 32],     // Dive animation frame 0
+    dive1: [-12, 8, 20, 32],     // Dive animation frame 1
+  };
+  const anglediff = (a, b) => { let d = ((a - b) % 360 + 540) % 360 - 180; return Math.abs(d); };
+  const anglelerp = (a, b, t) => { let d = ((b - a) % 360 + 540) % 360 - 180; return a + d * t; };
+  const between = (v, a, b) => { v = ((v % 360) + 360) % 360; return v >= a && v <= b; };
+
+  function polyOverlap(A, B) { // SAT, returns {nx,ny,d} pushing A out of B, or null
+    let best = 1e9, bx = 0, by = 0;
+    const test = (pts) => {
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i], q = pts[(i + 1) % pts.length];
+        let ax = q[1] - p[1], ay = p[0] - q[0]; const l = Math.hypot(ax, ay) || 1; ax /= l; ay /= l;
+        let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9;
+        for (const v of A) { const d = v[0] * ax + v[1] * ay; if (d < a0) a0 = d; if (d > a1) a1 = d; }
+        for (const v of B) { const d = v[0] * ax + v[1] * ay; if (d < b0) b0 = d; if (d > b1) b1 = d; }
+        const o1 = b1 - a0, o2 = a1 - b0;
+        if (o1 <= 0.0001 || o2 <= 0.0001) return false;
+        if (o1 < o2) { if (o1 < best) { best = o1; bx = ax; by = ay; } } else if (o2 < best) { best = o2; bx = -ax; by = -ay; }
+      }
+      return true;
+    };
+    if (!test(A) || !test(B)) return null;
+    return { nx: bx, ny: by, d: best };
+  }
+
   class Game {
     constructor(canvas) {
       this.cv = canvas; this.ctx = canvas.getContext('2d');
       this.input = { l: 0, r: 0, u: 0, d: 0 };
-      this.prevInput = { u: 0, d: 0 };
+      this.prevInput = { l: 0, r: 0, u: 0, d: 0 };
+      this.latch = {};
       this.running = false; this.paused = false;
       this.cam = { x: 0, y: 0 }; this.particles = [];
       this.onWin = null; this.onDeath = null;
-      this.acc = 0; this.last = 0;
-      this.hard = false;
+      this.acc = 0; this.last = 0; this.hard = false; this.mobile = false;
       this.loop = this.loop.bind(this);
       requestAnimationFrame(this.loop);
     }
     load(def, meta) {
       this.def = def; this.meta = meta || {};
-      this.level = new Level(def, { hard: this.hard });
-      this.deaths = 0; this.time = 0; this.coinGot = false; this.won = false;
-      this.spawn(true);
+      this.deaths = 0; this.won = false;
+      this.reset(true);
       this.running = true; this.paused = false;
     }
-    restart() { if (!this.def) return; this.level = new Level(this.def, { hard: this.hard }); this.spawn(true); this.time = 0; this.won = false; this.coinGot = false; }
-    spawn(snapCam) {
+    restart() { if (!this.def) return; this.deaths = 0; this.won = false; this.reset(true); }
+    reset(snapCam) {
+      this.level = new Level(this.def, { hard: this.hard });
+      this.time = 0; this.coinGot = false; this.clock = 0; this.waits = []; this.buf = []; this.bufT = 0;
+      this.particles = [];
       const s = this.level.start;
-      this.p = { x: s.x, y: s.y + 32 - P.h / 2, vx: 0, vy: 0, h: P.h, side: 1, st: 'normal', g: false, gObj: null, wall: 0,
-        coyote: 0, buf: 0, ign: 0, slideT: 0, maxS: P.maxSpeed, poundT: 0, stun: 0, anim: 0, dead: 0, portalCd: 0, boostCd: new Map(), air: 0 };
-      if (snapCam) { this.cam.x = this.p.x; this.cam.y = this.p.y; }
+      this.p = {
+        x: s.x, y: s.y, dx: 0, dy: 0, G: 90, ang: 0, side: 1,
+        maxSpeed: 330, acc: 1500, dec: 1500, jump: 650, grav: 1500, maxFall: 1000, ignoring: false, jumpCtrl: false,
+        floor: false, wasFloor: false, floorObj: null, jumped: false, landed: false, lastLanded: -1,
+        frame: 'stand', diveT: 0,
+        Walljump: false, CanSlide: true, Sliding: false, Plunge: false, Pound: true, Stun: false, LongJump: false, Falling: false,
+        Slipping: false, WaveDash: false, Dancing: false, CanWaveDash: false, TripleJump: false, Down: false, cnj: 0,
+        hit: 0, dead: 0, once: {}, jtOff: false, gpOff: false, noTrace: 0, mirrorT: -1, mirrorN: 0, zoneCd: 0, zoneIn: false, portalCd: 0,
+        anim: 0, slideId: 0, inv: false,
+      };
+      this.prevPos = { x: s.x, y: s.y };
+      if (snapCam) { this.cam.x = s.x; this.cam.y = s.y; }
     }
-    // ---- main loop ----
+    // ---------- scheduling (C2 "Wait") ----------
+    wait(t, fn) { this.waits.push({ t: this.clock + t, fn, lvl: this.level }); }
+    runWaits() {
+      const now = this.clock; const due = this.waits.filter(w => w.t <= now + 1e-9); if (!due.length) return;
+      this.waits = this.waits.filter(w => w.t > now + 1e-9);
+      for (const w of due) if (w.lvl === this.level) w.fn();
+    }
+    once(key, cond, fn) { const p = this.p; if (cond && !p.once[key]) { p.once[key] = true; fn(); } else if (!cond) p.once[key] = false; }
+
+    // ---------- main loop ----------
     loop(ts) {
       requestAnimationFrame(this.loop);
-      const dt = Math.min(0.05, (ts - (this.last || ts)) / 1000); this.last = ts;
+      const dt = Math.min(0.1, (ts - (this.last || ts)) / 1000); this.last = ts;
       if (this.running && !this.paused && this.level) {
-        this.acc += dt; const h = 1 / 240; let n = 0;
-        while (this.acc >= h && n < 14) { this.step(h); this.acc -= h; n++; }
-        if (n >= 14) this.acc = 0;
+        this.acc += dt; let n = 0;
+        while (this.acc >= TICK && n < 6) { this.prevPos = { x: this.p.x, y: this.p.y }; this.tick(); this.acc -= TICK; n++; }
+        if (n >= 6) this.acc = 0;
       }
       this.render(dt);
     }
-    pressed(k) { return this.input[k] && !this.prevInput[k]; }
-    step(dt) {
-      const L = this.level, p = this.p, I = this.input;
-      L.time += dt;
-      // edge detection on raw input once per step
-      const jumpEdge = I.u && !this.prevInput.u, downEdge = I.d && !this.prevInput.d;
-      this.prevInput.u = I.u; this.prevInput.d = I.d;
-      // moving areas
-      const gObj = p.g ? p.gObj : null; let footBefore = null;
-      if (gObj && gObj.pin) footBefore = { lx: 0, ly: 0, ...(() => { const r = rot(p.x - gObj.x, p.y + p.h / 2 - gObj.y, -gObj.a); return { lx: r[0], ly: r[1] }; })() };
+
+    // ---------- geometry helpers ----------
+    boxLocal() {
+      const p = this.p; let b = BOX[p.frame] || BOX.stand;
+      if (p.side < 0) b = [-b[2], b[1], -b[0], b[3]];
+      return b;
+    }
+    poly(x, y, b) {
+      const p = this.p; b = b || this.boxLocal();
+      const a = (p.G - 90) * D2R, c = Math.cos(a), s = Math.sin(a);
+      return [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]]].map(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
+    }
+    solidOn(o) {
+      if (o.gone) return false;
+      const t = o.t;
+      if (t === 'GroundPoundSolid') return !this.p.gpOff;
+      if (JT.has(t)) return !this.p.jtOff;
+      return SOLID.has(t);
+    }
+    // first solid overlapping at (x,y). jt: include jump-throughs that weren't overlapped at (fx,fy)
+    overlap(x, y, jt, fx, fy, b) {
+      const P1 = this.poly(x, y, b);
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const v of P1) { x0 = Math.min(x0, v[0]); y0 = Math.min(y0, v[1]); x1 = Math.max(x1, v[0]); y1 = Math.max(y1, v[1]); }
+      let P0 = null;
+      for (const o of this.level.near(x0, y0, x1, y1)) {
+        if (!this.solidOn(o) || !bbHit(o.bb, x0, y0, x1, y1)) continue;
+        if (JT.has(o.t)) {
+          if (!jt) continue;
+          if (!polyOverlap(P1, o.poly)) continue;
+          if (!P0) P0 = this.poly(fx, fy, b);
+          if (polyOverlap(P0, o.poly)) continue;
+          return o;
+        }
+        if (polyOverlap(P1, o.poly)) return o;
+      }
+      return null;
+    }
+    overlapsType(test, b) {
+      const p = this.p, P1 = this.poly(p.x, p.y, b);
+      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+      for (const v of P1) { x0 = Math.min(x0, v[0]); y0 = Math.min(y0, v[1]); x1 = Math.max(x1, v[0]); y1 = Math.max(y1, v[1]); }
+      for (const o of this.level.near(x0, y0, x1, y1)) if (!o.gone && test(o) && bbHit(o.bb, x0, y0, x1, y1) && polyOverlap(P1, o.poly)) return o;
+      return null;
+    }
+    down() { const a = this.p.G * D2R; return [Math.cos(a), Math.sin(a)]; }
+    right() { const a = (this.p.G - 90) * D2R; return [Math.cos(a), Math.sin(a)]; }
+    onFloor() { const p = this.p, [gx, gy] = this.down(); return !!this.overlap(p.x + gx, p.y + gy, true, p.x, p.y); }
+    byWall(side) { // 0 = left, 1 = right
+      const p = this.p, [gx, gy] = this.down(), [rx, ry] = this.right(); const s = side ? 2 : -2;
+      return !!this.overlap(p.x + rx * s - gx * 2, p.y + ry * s - gy * 2, false);
+    }
+    pushOut(dx, dy, dist, jt, fx, fy) { // move along (dx,dy) up to dist px until free; C2 pushOutSolid
+      const p = this.p, ox = p.x, oy = p.y;
+      for (let i = 1; i <= Math.ceil(dist); i++) {
+        const d = Math.min(i, dist);
+        if (!this.overlap(ox + dx * d, oy + dy * d, jt, fx, fy)) {
+          // refine back towards the obstacle
+          let lo = d - 1, hi = d;
+          for (let k = 0; k < 5; k++) { const m = (lo + hi) / 2; if (this.overlap(ox + dx * m, oy + dy * m, jt, fx, fy)) lo = m; else hi = m; }
+          p.x = ox + dx * hi; p.y = oy + dy * hi; return true;
+        }
+      }
+      return false;
+    }
+    pushOutNearest(maxd) {
+      const p = this.p, ox = p.x, oy = p.y;
+      for (let r = 1; r <= maxd; r++) for (let k = 0; k < 16; k++) {
+        const a = k / 16 * Math.PI * 2; const x = ox + Math.cos(a) * r, y = oy + Math.sin(a) * r;
+        if (!this.overlap(x, y, false)) { p.x = x; p.y = y; return true; }
+      }
+      return false;
+    }
+    setG(ng) { // change gravity angle while keeping world velocity (as the original events do)
+      const p = this.p, d = -(((ng - p.G) % 360 + 540) % 360 - 180) * D2R;
+      const vx = p.dx * Math.cos(d) - p.dy * Math.sin(d), vy = p.dy * Math.cos(d) + p.dx * Math.sin(d);
+      p.G = ng; p.dx = vx; p.dy = vy;
+    }
+    speed() { return Math.hypot(this.p.dx, this.p.dy); }
+    moving() { return this.p.dx !== 0 || this.p.dy !== 0; }
+    // ray cast against solids (Trace behaviour). returns surface normal angle in degrees or null
+    trace(x0, y0, x1, y1) {
+      const L = this.level; let best = null, bt = 2;
+      const minx = Math.min(x0, x1), maxx = Math.max(x0, x1), miny = Math.min(y0, y1), maxy = Math.max(y0, y1);
+      for (const o of L.near(minx, miny, maxx, maxy)) {
+        if (!this.solidOn(o)) continue;
+        const pts = o.poly;
+        for (let i = 0; i < pts.length; i++) {
+          const a = pts[i], b = pts[(i + 1) % pts.length];
+          const ex = b[0] - a[0], ey = b[1] - a[1], rx = x1 - x0, ry = y1 - y0;
+          const den = rx * ey - ry * ex; if (Math.abs(den) < 1e-9) continue;
+          const t = ((a[0] - x0) * ey - (a[1] - y0) * ex) / den, u = ((a[0] - x0) * ry - (a[1] - y0) * rx) / den;
+          if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && t < bt) {
+            bt = t; let nx = ey, ny = -ex; if (nx * rx + ny * ry > 0) { nx = -nx; ny = -ny; }
+            best = Math.atan2(ny, nx) / D2R;
+          }
+        }
+      }
+      return best;
+    }
+
+    // ---------- Construct 2 Platform behaviour ----------
+    platformTick(dt) {
+      const p = this.p;
+      p.jumped = false; p.landed = false;
+      const inv = p.inv;
+      let left = !p.ignoring && (inv ? this.input.r : this.input.l), right = !p.ignoring && (inv ? this.input.l : this.input.r);
+      const jump = p.jumpCtrl && !p.ignoring; p.jumpCtrl = false;
+      if (this.overlap(p.x, p.y, false)) this.pushOutNearest(40);
+      const [gx, gy] = this.down(), [rx, ry] = this.right();
+      const floor = this.onFloor();
+      if (floor) {
+        if (p.dy > 0) { if (!p.wasFloor) p.landed = true; p.dy = 0; }
+        if (jump) { p.dy = -p.jump; p.jumped = true; }
+      } else {
+        p.dy += p.grav * dt;
+        if (p.dy > p.maxFall) p.dy = p.maxFall;
+      }
+      if (left === right) { if (p.dx < 0) p.dx = Math.min(0, p.dx + p.dec * dt); else if (p.dx > 0) p.dx = Math.max(0, p.dx - p.dec * dt); }
+      else if (left) { p.dx -= (p.dx > 0 ? p.acc + p.dec : p.acc) * dt; }
+      else { p.dx += (p.dx < 0 ? p.acc + p.dec : p.acc) * dt; }
+      if (p.dx > p.maxSpeed) p.dx = p.maxSpeed; else if (p.dx < -p.maxSpeed) p.dx = -p.maxSpeed;
+
+      // horizontal move (in sub-steps to avoid tunnelling)
+      if (p.dx !== 0) {
+        const total = p.dx * dt, steps = Math.max(1, Math.ceil(Math.abs(total) / 6));
+        for (let i = 0; i < steps; i++) {
+          const ox = p.x, oy = p.y, mv = total / steps;
+          p.x += rx * mv; p.y += ry * mv;
+          if (this.overlap(p.x, p.y, false)) {
+            // try to walk up a slope
+            if (!this.pushOut(-gx, -gy, Math.abs(mv) + 2.5, false)) { p.x = ox; p.y = oy; p.dx = 0; break; }
+          } else if (floor && !p.jumped) {
+            // stick to the ground when walking down slopes
+            if (!this.onFloor()) {
+              const sx = p.x, sy = p.y; let ok = false;
+              for (let k = 1; k <= Math.abs(mv) + 3; k++) {
+                if (this.overlap(sx + gx * k, sy + gy * k, true, sx, sy)) { p.x = sx + gx * (k - 1); p.y = sy + gy * (k - 1); this.pushOut(gx, gy, 0); ok = true; break; }
+              }
+              if (!ok) { p.x = sx; p.y = sy; }
+            }
+          }
+        }
+      }
+      // vertical move
+      if (p.dy !== 0) {
+        const total = p.dy * dt, steps = Math.max(1, Math.ceil(Math.abs(total) / 6));
+        for (let i = 0; i < steps; i++) {
+          const ox = p.x, oy = p.y, mv = total / steps;
+          p.x += gx * mv; p.y += gy * mv;
+          const hit = this.overlap(p.x, p.y, p.dy > 0, ox, oy);
+          if (hit) {
+            const sg = p.dy > 0 ? -1 : 1;
+            if (!this.pushOut(gx * sg, gy * sg, Math.abs(mv) + 2, p.dy > 0, ox, oy)) { p.x = ox; p.y = oy; }
+            if (p.dy > 0) { p.floorObj = hit; if (!p.wasFloor && !floor) p.landed = true; }
+            p.dy = 0; break;
+          }
+        }
+      }
+      p.floor = this.onFloor();
+      if (p.floor) { const [gx2, gy2] = this.down(); p.floorObj = this.overlap(p.x + gx2, p.y + gy2, true, p.x, p.y) || p.floorObj; }
+      if (p.floor && !p.wasFloor) p.landed = true;
+      p.wasFloor = p.floor;
+    }
+
+    // ---------- controls ----------
+    readInput() {
+      const p = this.p, I = this.input, pr = this.prevInput;
+      const edge = k => (I[k] && !pr[k]) || this.latch[k];
+      if (edge('l') || edge('r')) p.inv = between(p.G, 181, 359);
+      if (edge('u')) { for (let i = 0; i < (this.mobile ? 10 : 5); i++) this.buf.push('Jump'); }
+      if (edge('d')) this.ctlDown();
+      this.latch = {};
+      pr.l = I.l; pr.r = I.r; pr.u = I.u; pr.d = I.d;
+      // input buffer: every 0.03s, wait 0.05s then run the first buffered control
+      this.bufT += TICK;
+      if (this.bufT >= 0.03) { this.bufT -= 0.03; if (this.buf.length) this.wait(0.05, () => { if (this.buf.length) { const n = this.buf[0]; if (n === 'Jump') this.ctlJump(); this.buf.shift(); } }); }
+    }
+    key(k, v) { if (v && !this.input[k]) this.latch[k] = 1; this.input[k] = v ? 1 : 0; }
+    clearBuf() { this.buf.length = 0; }
+    ctlDown() {
+      const p = this.p; if (p.dead) return;
+      if (p.floor && p.CanSlide && !p.Plunge && !p.Stun && !p.Slipping) {
+        p.Down = true;
+        this.wait(0.05, () => {
+          if (this.buf.length && !p.Sliding) {
+            p.Down = false; p.dec = 0; p.dy = -p.jump * 0.8; sfx('Plunge', 0.4); this.clearBuf();
+            this.wait(0.15, () => { p.Plunge = true; });
+          } else {
+            p.Down = false;
+            this.wait(0, () => { if (p.floor) p.Sliding = true; });
+          }
+        });
+      }
+      if (!p.floor) {
+        if (this.input.l || this.input.r) {
+          if (!p.Pound && !p.Stun && !p.LongJump) {
+            if (!p.Plunge) p.Plunge = true; else { p.Pound = true; p.Plunge = false; }
+          }
+          if (!p.Stun && p.LongJump) { p.Pound = true; this.wait(0.1, () => { p.Pound = false; p.CanWaveDash = true; p.LongJump = false; }); }
+        } else if (!p.Stun) {
+          if (p.LongJump) this.wait(0.1, () => { p.Pound = false; p.CanWaveDash = true; p.LongJump = false; });
+          p.Pound = true; p.Plunge = false;
+        }
+      }
+    }
+    ctlJump() {
+      const p = this.p; if (p.dead) return;
+      // wall jump
+      if (!p.floor && !p.Pound && !p.Stun && (this.byWall(0) || this.byWall(1))) {
+        const bl = this.byWall(0), br = this.byWall(1);
+        p.dx = -p.side * p.maxSpeed; p.dec = 0; p.ignoring = true; sfx('Walljump', 0.45); this.clearBuf();
+        p.dy = -p.jump * 0.8; this.wait(0, () => { p.Walljump = true; });
+        if (this.input.l || this.input.r) { if (bl && p.side === 1) p.side = -1; if (br && p.side === -1) p.side = 1; }
+        this.puff(p.x, p.y + 10, 5);
+      }
+      // wave dash jump
+      if (p.WaveDash && p.floor && this.moving()) { p.dy = -p.jump * 0.7; sfx('JumpBoost', 0.4); p.WaveDash = false; p.LongJump = true; this.clearBuf(); }
+      // slide jump
+      if (p.Sliding) { p.dec = 0; p.dy = -p.jump * 0.8; p.Sliding = false; sfx('Plunge', 0.4); this.clearBuf(); this.wait(0.15, () => { p.Plunge = true; }); }
+      // dive (on floor) -> long jump
+      if (p.Plunge && p.floor && this.moving()) { p.dy = -p.jump * 0.7; sfx('JumpBoost', 0.4); p.Plunge = false; p.LongJump = true; this.clearBuf(); }
+      // ground pound jump
+      if (p.Pound && p.floor) { this.clearBuf(); p.dy = -p.jump * 1.1; p.Pound = false; p.CanWaveDash = false; p.st2 = 'gpjump'; sfx('Superjump', 0.4); }
+      // normal jump (with consecutive / triple jumps)
+      if (this.normalState() && p.floor && this.buf.length) {
+        this.clearBuf(); p.jumpCtrl = true;
+        if (this.clock - p.lastLanded <= 0.1) {
+          p.cnj++;
+          this.wait(0, () => {
+            if (p.cnj === 0) sfx('jump', 0.35);
+            else if (p.cnj === 1) { p.dy = -p.jump * 1.05; sfx('Superjump', 0.3); }
+            else if (p.cnj === 2) { p.dy = p.dy * 1.15; p.cnj = -1; p.TripleJump = true; sfx('Superjump', 0.45); }
+          });
+        } else { p.cnj = 0; sfx('jump', 0.35); }
+      }
+    }
+    normalState() { const p = this.p; return !p.Sliding && !p.Plunge && !p.Pound && !p.Stun && !p.Walljump && !p.Slipping && !p.WaveDash && !p.Down; }
+
+    // ---------- one game tick ----------
+    tick() {
+      const L = this.level, p = this.p, dt = TICK;
+      this.clock += dt; L.time += dt;
+      // moving areas (carry the player when standing on a moving solid)
+      const fo = p.floor && p.floorObj && p.floorObj.pin ? p.floorObj : null; let rel = null;
+      if (fo) { const r = rot(p.x - fo.x, p.y - fo.y, -fo.a); rel = r; }
       L.stepAreas(dt);
-      if (footBefore && !p.dead) { const r = rot(footBefore.lx, footBefore.ly, gObj.a); p.x = gObj.x + r[0]; p.y = gObj.y + r[1] - p.h / 2; }
-      this.stepLaunchers(dt);
+      if (fo && !p.dead) { const r = rot(rel[0], rel[1], fo.a); p.x = fo.x + r[0]; p.y = fo.y + r[1]; }
+      this.stepRockets(dt);
       this.stepParticles(dt);
-      if (p.dead) { p.dead -= dt; if (p.dead <= 0) { this.level = new Level(this.def, { hard: this.hard }); this.spawn(false); } return; }
+      this.runWaits();
+      if (p.dead) { p.dead -= dt; if (p.dead <= 0) this.reset(false); return; }
       if (this.won) return;
       this.time += dt;
+      this.readInput();
+      this.platformTick(dt);
+      if (p.landed) { p.lastLanded = this.clock; if (!p.Pound) this.puff(p.x, p.y + 30, 3); }
+      this.events(dt);
+      this.gameplay(dt);
+      p.anim += dt;
+    }
 
-      const inX = (I.r ? 1 : 0) - (I.l ? 1 : 0);
-      if (jumpEdge) p.buf = P.buffer; else p.buf = Math.max(0, p.buf - dt);
-      p.coyote = p.g ? P.coyote : Math.max(0, p.coyote - dt);
-      p.ign = Math.max(0, p.ign - dt); p.portalCd = Math.max(0, p.portalCd - dt); p.stun = Math.max(0, p.stun - dt);
-      if (!p.g) p.air += dt; else p.air = 0;
-
-      // ---- special moves ----
-      if (downEdge && p.stun <= 0) {
-        if (p.g && p.st === 'normal' && Math.abs(p.vx) > 60) this.startSlide(Math.sign(p.vx), Math.abs(p.vx));
-        else if (!p.g && (p.st === 'normal' || p.st === 'long')) {
-          if (inX !== 0 || Math.abs(p.vx) > 90) this.startDive(inX || Math.sign(p.vx));
-          else this.startPound();
-        } else if (!p.g && p.st === 'dive') this.startPound();
+    events(dt) {
+      const p = this.p, I = this.input;
+      const L_ = p.inv ? I.r : I.l, R_ = p.inv ? I.l : I.r;
+      const falling = !p.floor && p.dy > 0;
+      const bw0 = this.byWall(0), bw1 = this.byWall(1);
+      // --- WallSlide / Jump ---
+      if (falling && !p.Pound && !p.Stun) {
+        if ((bw0 && L_) || (bw1 && R_)) { p.dy = p.dy / 1.5; p.Walljump = true; p.frame = 'stand'; }
       }
-
-      // jumping
-      if (p.buf > 0 && p.stun <= 0 && p.st !== 'pound') {
-        if (p.g || p.coyote > 0) {
-          if (p.st === 'slide') { // long jump
-            const sp = Math.min(660, Math.max(Math.abs(p.vx), P.maxSpeed) * 1.5);
-            p.maxS = 660; p.vx = p.side * sp; p.vy = -P.jump * 0.75; this.setH(P.h); p.st = 'long'; sfx('Superjump', 0.4);
-          } else { p.vy = -P.jump; p.st = p.st === 'dive' ? 'normal' : p.st; sfx('jump', 0.35); }
-          p.g = false; p.coyote = 0; p.buf = 0; p.jumped = true;
-        } else if (p.wall && (p.st === 'normal' || p.st === 'long' || p.st === 'dive')) {
-          this.setH(P.h);
-          p.vx = -p.wall * Math.max(P.maxSpeed, Math.min(Math.abs(p.vx), 450)); p.maxS = Math.max(p.maxS, Math.abs(p.vx));
-          p.vy = -P.jump * 0.9; p.side = -p.wall; p.ign = 0.16; p.st = 'normal'; p.buf = 0; sfx('Walljump', 0.4);
-          this.puff(p.x + p.wall * P.w / 2, p.y, 5);
+      if (p.jumped && !p.Sliding && (bw0 || bw1)) { // jump next to a wall: super jump
+        p.dx = -p.side * p.maxSpeed; this.wait(0, () => { p.dy = -p.jump * 1.2; sfx('Superjump', 0.4); });
+      }
+      if (p.Walljump && falling && !bw0 && !bw1) p.Walljump = false;
+      if (p.Walljump && p.floor) p.Walljump = false;
+      // --- Mirroring (facing follows movement) + dance detection ---
+      if (!p.Slipping && !p.WaveDash && !p.CanWaveDash) {
+        if (p.side > 0 && p.dx < 0) this.mirror(-1); else if (p.side < 0 && p.dx > 0) this.mirror(1);
+      }
+      if (this.clock - p.mirrorT > 0.3 && p.mirrorN > 0) p.mirrorN = 0;
+      // --- Slopes (gravity follows the ground) ---
+      const a = (p.G - 90) * D2R, c = Math.cos(a), s = Math.sin(a);
+      const lp = (u, v) => [p.x + u * c - v * s, p.y + u * s + v * c];
+      if (Math.round(this.clock * 60) % 2 === 0) {
+        const b = lp(0, 48), f = lp(p.side > 0 ? 42 : -42, 30);
+        p.tr1 = this.trace(p.x, p.y, b[0], b[1]); p.tr2 = this.trace(p.x, p.y, f[0], f[1]);
+      }
+      const t1 = p.tr1, t2 = p.tr2;
+      if (t2 != null && t1 == null) {
+        const sa = ((t2 + 180) % 360 + 360) % 360;
+        if (between(sa, 0, 30) || between(sa, 150, 180)) this.setG(sa + 90 * p.side);
+      }
+      if (t1 != null && p.floor) {
+        const sa = ((t1 + 180) % 360 + 360) % 360;
+        if (this.speed() > 50) {
+          if (anglediff(p.G, sa) <= 45) this.setG(sa);
+          if (between(sa, 0, 45) || between(sa, 135, 225) || between(sa, 180, 360)) { p.Sliding = false; p.Plunge = false; p.Stun = false; }
+        } else {
+          if (between(sa, 180, 360)) p.Falling = true;
+          if (between(sa, 0, 45) || between(sa, 135, 225)) { p.side = 1; p.Slipping = true; }
+          if (between(sa, 45, 135)) this.setG(sa);
         }
+        p.noTrace = 0;
+      } else if (t1 == null && t2 == null) {
+        p.noTrace += dt; if (p.noTrace >= 0.05) p.Falling = true;
+      } else p.noTrace = 0;
+      p.ang = anglelerp(p.ang, p.G - 90, 0.3);
+      if (p.Falling) {
+        this.setG(anglelerp(p.G, 90, 0.3)); p.dec = 500;
+        if (anglediff(p.G, 90) <= 1) { this.setG(90); p.dec = 1500; p.Falling = false; }
       }
-
-      // ---- horizontal ----
-      if (p.st === 'normal' || p.st === 'long') {
-        if (p.g && p.st === 'normal') p.maxS = Math.max(P.maxSpeed, p.maxS - 900 * dt);
-        const ms = p.maxS;
-        if (p.ign <= 0 && p.stun <= 0 && inX) {
-          p.side = inX;
-          if (Math.sign(p.vx) !== inX && p.vx !== 0) p.vx += inX * (P.accel + P.decel) * dt;
-          else p.vx += inX * P.accel * dt;
-          if (Math.abs(p.vx) > ms) p.vx = Math.sign(p.vx) * ms;
-        } else if (p.ign <= 0) {
-          const dec = p.st === 'long' ? 0 : (p.g ? P.decel : P.decel);
-          p.vx = approach(p.vx, 0, dec * dt);
-        }
-        if (Math.abs(p.vx) > ms) p.vx = Math.sign(p.vx) * ms;
-      } else if (p.st === 'slide') {
-        p.slideT -= dt; p.vx = approach(p.vx, 0, 260 * dt);
-        if ((p.slideT <= 0 || Math.abs(p.vx) < 110) && this.canStand()) { this.setH(P.h); p.st = 'normal'; p.maxS = Math.max(P.maxSpeed, Math.abs(p.vx)); }
-        if (!p.g && p.air > 0.06) { p.st = 'dive'; }
-      } else if (p.st === 'pound') {
-        p.poundT += dt;
-        p.vx = 0;
-        if (p.poundT < 0.16) { p.vy = -260 * (1 - p.poundT / 0.16); }
-        else if (p.vy < 600) p.vy = 600;
+      // --- Special movements ---
+      if (p.floor && !p.Sliding) {
+        if (p.CanWaveDash && !p.Plunge && !p.Stun) { p.CanWaveDash = false; p.WaveDash = true; }
+        if (this.clock - p.lastLanded > dt + 1e-6) { p.dec = 1500; p.maxSpeed = 330; p.ignoring = false; }
       }
-
-      // ---- vertical ----
-      const g = p.st === 'pound' && p.poundT >= 0.16 ? P.gravity * 2.2 : (p.st === 'pound' ? 0 : P.gravity);
-      p.vy += g * dt;
-      const mf = p.st === 'pound' ? 2400 : P.maxFall;
-      if (p.vy > mf) p.vy = mf;
-      if (!p.g && p.wall && p.vy > 0 && (p.st === 'normal' || p.st === 'long') && inX !== -p.wall) {
-        if (p.vy > P.wallSlide) p.vy = approach(p.vy, P.wallSlide, 5000 * dt);
-        p.side = p.wall;
-        if (Math.random() < 0.08) this.puff(p.x + p.wall * P.w / 2, p.y + p.h / 2 - 6, 1);
+      if (p.Dancing) {
+        p.maxSpeed = 450;
+        if (!p.floor || !this.moving()) { if (!p.danceW) { p.danceW = true; this.wait(0.2, () => { p.danceW = false; if (!p.floor || !this.moving()) p.Dancing = false; }); } }
+        if (p.Sliding) p.Dancing = false;
       }
-
-      // ---- integrate & collide ----
-      const wasG = p.g;
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      this.collide(wasG && !p.jumped && p.st !== 'pound', dt);
-      p.jumped = false;
-
-      // landing transitions
-      if (p.g && !wasG) {
-        if (p.st === 'dive') { this.startSlide(p.side, Math.abs(p.vx), true); }
-        else if (p.st === 'long') { p.st = 'normal'; }
-        else if (p.st === 'pound') {
-          if (p.gObj && p.gObj.t === 'GroundPoundSolid') { this.breakSolid(p.gObj); p.g = false; p.vy = 700; }
-          else { p.st = 'normal'; p.stun = 0.12; sfx('Pound', 0.5); this.shake = 0.15; this.puff(p.x, p.y + p.h / 2, 10); }
-        } else if (p.vy > 0 || true) this.puff(p.x, p.y + p.h / 2, 2);
+      if ((p.Dancing || p.TripleJump || p.LongJump) && Math.floor(this.clock / 0.08) !== Math.floor((this.clock - dt) / 0.08)) this.ghost();
+      if (p.TripleJump) { p.maxSpeed = Math.max(p.maxSpeed, 380); if (p.floor || bw0 || bw1 || p.Plunge) p.TripleJump = false; }
+      if (p.WaveDash) {
+        p.maxSpeed = 700; p.dec = 100; p.ignoring = true; p.frame = 'wave';
+        this.once('wave', true, () => {
+          sfx('Slide', 0.35); p.waveT = this.clock + 0.4;
+          if (L_ && p.side === 1) p.dx = -550; else if (R_) p.dx = 550; else if (p.side === 1) p.dx = 550; else p.dx = -550;
+        });
+        if (!p.floor && !this.moving()) p.WaveDash = false;
+        if (p.floor && this.moving()) p.dec = 400;
+        if (this.clock >= p.waveT) p.WaveDash = false;
+        if (this.speed() <= 335 && !p.waveSlowW) { p.waveSlowW = true; this.wait(0.3, () => { p.waveSlowW = false; p.WaveDash = false; }); }
+      } else p.once.wave = false;
+      if (p.Sliding) {
+        p.frame = 'slide'; p.ignoring = true; p.dx = p.maxSpeed * 0.8 * p.side; p.maxSpeed = 660;
+        this.once('slide', true, () => {
+          sfx('Slide', 0.35); p.CanSlide = false; p.Pound = false; const id = ++p.slideId;
+          this.wait(0.8, () => { if (p.slideId === id) p.Sliding = false; this.wait(0.5, () => { if (!p.CanSlide) p.CanSlide = true; }); });
+        });
+        if (!p.floor) { if (p.slideEndT == null) p.slideEndT = this.clock + 0.1; if (this.clock >= p.slideEndT) { p.dec = 0; p.Sliding = false; p.frame = 'stand'; } }
+        else p.slideEndT = null;
+        if (bw0 && p.side < 0) { p.Sliding = false; p.CanSlide = true; }
+        if (bw1 && p.side > 0) { p.Sliding = false; p.CanSlide = true; }
+      } else { p.once.slide = false; p.slideEndT = null; }
+      if (p.Plunge) {
+        if (!p.wasPlunge) p.diveT = 0; p.diveT += dt;
+        p.frame = p.diveT < 1 / 3 ? 'dive0' : 'dive1'; p.ignoring = true;
+        this.once('plunge', true, () => sfx('Plunge', 0.4));
+        if ((bw0 && p.side < 0) || (bw1 && p.side > 0)) { p.Plunge = false; p.Stun = true; }
+        if (!p.floor) { p.dx = p.maxSpeed * 0.7 * p.side; p.maxSpeed = 660; p.dec = 0; }
+        if (p.floor && this.moving()) p.dec = 1000;
+        if (p.floor && !this.moving() && !p.plungeW) { p.plungeW = true; this.wait(0.2, () => { p.plungeW = false; p.Plunge = false; }); }
+      } else p.once.plunge = false;
+      p.wasPlunge = p.Plunge;
+      if (!p.Plunge && (p.frame === 'dive0' || p.frame === 'dive1')) p.frame = 'stand';
+      if (p.LongJump) {
+        p.frame = 'stand'; p.ignoring = false; p.maxSpeed = 660; p.dx = p.maxSpeed * 2 * p.side; p.dec = 0;
+        if (bw0 || bw1) p.LongJump = false;
+        if (p.floor) p.LongJump = false;
       }
-      this.wallCheck();
+      if (p.Pound) {
+        p.frame = 'stand'; p.dx = 0; p.maxFall = p.grav * 2; p.ignoring = true;
+        this.once('poundOff', true, () => { p.jtOff = true; p.gpOff = true; });
+        this.once('poundFloor', p.floor, () => {
+          sfx('Pound', 0.5); this.shake = 0.12; this.puff(p.x, p.y + 30, 8);
+          this.wait(0.25, () => { if (p.Pound && !p.floor) p.CanWaveDash = true; p.Pound = false; });
+        });
+        this.once('poundStart', true, () => {
+          sfx('PrePound', 0.4); p.dy = -p.grav / 5;
+          this.wait(0.2, () => { p.dy = p.grav / 3; });
+        });
+      } else { p.once.poundOff = false; p.once.poundFloor = false; p.once.poundStart = false; }
+      if (p.CanWaveDash) {
+        this.once('cwd', true, () => { p.dx = 0; p.dy = p.grav / 3; p.cwdT = this.clock + 0.5; });
+        if (this.clock >= p.cwdT) p.CanWaveDash = false;
+        if (p.floor) p.CanWaveDash = false;
+      } else p.once.cwd = false;
+      if (p.Slipping) {
+        p.frame = 'slide'; p.ignoring = true;
+        this.once('slip', true, () => { p.Sliding = false; p.Plunge = false; p.Stun = false; });
+        const ca = ((p.ang % 360) + 360) % 360;
+        if (!(ca <= 45 || ca >= 315)) { p.dx = -p.maxSpeed * p.side; p.maxSpeed = 700; p.dec = 0; }
+        else if (this.moving()) p.dec = 500;
+        else p.Slipping = false;
+      } else p.once.slip = false;
+      if (p.Stun) {
+        p.frame = 'stand'; p.ignoring = true;
+        this.once('stunFloor', p.floor, () => { this.wait(0.3, () => { p.Stun = false; p.dx = -p.side * 100; }); });
+        this.once('stun', true, () => { p.dx = p.dx * -0.6; sfx('Pound', 0.5); this.shake = 0.25; });
+      } else { p.once.stun = false; p.once.stunFloor = false; }
+      if (!p.floor && falling) { const b = lp(0, 64); if (this.trace(p.x, p.y, b[0], b[1]) != null) p.lastLanded = this.clock; }
+      if (this.normalState()) { p.frame = 'stand'; p.ignoring = false; }
+      else p.cnj = 0;
+      // pound-through floors come back once we're clear of them
+      if (!p.Pound && p.jtOff && !this.overlapsType(o => JT.has(o.t))) p.jtOff = false;
+      if (!p.Pound && p.gpOff && !this.overlapsType(o => o.t === 'GroundPoundSolid')) p.gpOff = false;
+    }
+    mirror(side) {
+      const p = this.p; p.side = side;
+      if (p.floor && this.moving() && !p.Dancing) {
+        if (this.clock - p.mirrorT <= 0.3) { p.mirrorN++; if (p.mirrorN >= 2) { p.Dancing = true; p.mirrorN = 0; } } else p.mirrorN = 1;
+        p.mirrorT = this.clock;
+      } else p.mirrorN = 0;
+    }
 
-      // ---- hazards / triggers ----
-      this.checkHazards();
-      this.checkTriggers(dt);
-      if (p.y > L.h + 500) this.die();
-      p.anim += dt * (p.g ? Math.abs(p.vx) / 40 : 4);
-    }
-    setH(h) { const p = this.p; if (p.h === h) return; p.y += (p.h - h) / 2; p.h = h; }
-    canStand() {
-      const p = this.p; const cy = p.y + p.h / 2 - P.h / 2;
-      for (const o of this.level.near(p.x - P.w / 2, cy - P.h / 2, p.x + P.w / 2, cy + P.h / 2)) {
-        if (o.gone || !SOLID.has(o.t)) continue;
-        const r = satBox(p.x, cy - 1, P.w / 2 - 1, P.h / 2 - 1, o); if (r) return false;
-      }
-      return true;
-    }
-    startSlide(dir, speed, fromDive) {
-      const p = this.p; p.st = 'slide'; p.side = dir || p.side;
-      const sp = fromDive ? Math.max(speed, 300) : Math.max(speed * 1.12, 380);
-      p.maxS = Math.max(p.maxS, sp); p.vx = p.side * Math.min(sp, 700); p.slideT = fromDive ? 0.5 : 0.8;
-      this.setH(P.hSmall); sfx('Slide', 0.35);
-    }
-    startDive(dir) {
-      const p = this.p; p.st = 'dive'; p.side = dir || p.side;
-      const sp = Math.min(660, Math.max(Math.abs(p.vx), P.maxSpeed) * 1.25);
-      p.maxS = 660; p.vx = p.side * sp; p.vy = Math.min(p.vy, -P.jump * 0.35);
-      this.setH(P.hSmall); sfx('Plunge', 0.4);
-    }
-    startPound() { const p = this.p; p.st = 'pound'; p.poundT = 0; p.vx = 0; this.setH(P.h); sfx('PrePound', 0.4); }
-    breakSolid(o) {
-      o.gone = true; sfx('Pound', 0.6); this.shake = 0.2;
-      for (let i = 0; i < 16; i++) this.particles.push({ x: o.bb[0] + Math.random() * (o.bb[2] - o.bb[0]), y: o.bb[1] + Math.random() * (o.bb[3] - o.bb[1]), vx: (Math.random() - 0.5) * 300, vy: -Math.random() * 300, life: 0.8, c: '#f80a19', s: 6 });
-    }
-    collide(snap, dt) {
+    gameplay(dt) {
       const p = this.p, L = this.level;
-      p.g = false;
-      const hw = P.w / 2;
-      for (let it = 0; it < 4; it++) {
-        const hh = p.h / 2;
-        const list = L.near(p.x - hw - 2, p.y - hh - 2, p.x + hw + 2, p.y + hh + 10);
-        let hit = false;
-        for (const o of list) {
-          if (o.gone || !(SOLID.has(o.t) || JT.has(o.t))) continue;
-          if (!bbHit(o.bb, p.x - hw, p.y - hh, p.x + hw, p.y + hh)) continue;
-          const r = satBox(p.x, p.y, hw, hh, o); if (!r) continue;
-          if (JT.has(o.t)) { if (!(r.ny < -0.5 && p.vy >= -1 && r.d <= Math.max(8, p.vy * dt * 2 + 6))) continue; }
-          if (r.ny < -0.55) { // ground: resolve vertically (keeps us still on slopes)
-            const d = r.d / -r.ny; if (d > 40) continue;
-            p.y -= d + 0.01; if (p.vy > 0) p.vy = 0; p.g = true; p.gObj = o; p.gN = r;
-          } else {
-            p.x += r.nx * (r.d + 0.01); p.y += r.ny * (r.d + 0.01);
-            const vn = p.vx * r.nx + p.vy * r.ny; if (vn < 0) { p.vx -= vn * r.nx; p.vy -= vn * r.ny; }
-          }
-          hit = true;
-        }
-        if (!hit) break;
+      // spikes & rockets (need ~2 ticks of overlap, like HitBuffer)
+      const touching = this.overlapsType(o => SPIKE.has(o.t)) || L.rockets.some(r => polyOverlap(this.poly(p.x, p.y), r.poly));
+      if (touching) { p.hit += dt * 60; if (p.hit >= 2) return this.die(); } else p.hit = 0;
+      // outside layout
+      const P = this.poly(p.x, p.y); const xs = P.map(v => v[0]), ys = P.map(v => v[1]);
+      if (Math.max(...xs) < 0 || Math.min(...xs) > L.w || Math.max(...ys) < 0 || Math.min(...ys) > L.h) return this.die();
+      // jump boosts (on collision)
+      p.boosts = p.boosts || new Set();
+      const now = new Set();
+      for (const o of L.triggers) {
+        if (o.gone || o.t !== 'JumpBoost') continue;
+        if (!polyOverlap(P, o.poly)) continue;
+        now.add(o);
+        if (p.boosts.has(o) || p.Pound || p.Plunge || p.Stun) continue;
+        const ang = o.a / D2R + 270, F = p.grav * (o.f || 0.7);
+        p.dy = F * Math.sin(ang * D2R);
+        p.maxSpeed = Math.max(F * Math.cos(ang * D2R), 330);
+        p.dx = F * Math.cos(ang * D2R) + p.dx;
+        if (o.dc) p.dec = 0;
+        sfx('JumpBoost', 0.45); this.puff(o.x, o.y, 6);
       }
-      if (!p.g && snap && p.vy >= 0) { // stick to ground on downhill slopes
-        const dy = Math.abs(p.vx) * dt * 1.2 + 2; const oy = p.y; p.y += dy;
-        const hh = p.h / 2; let found = false;
-        for (const o of L.near(p.x - hw, p.y - hh, p.x + hw, p.y + hh)) {
-          if (o.gone || !(SOLID.has(o.t) || JT.has(o.t))) continue;
-          const r = satBox(p.x, p.y, hw, hh, o);
-          if (r && r.ny < -0.55) { const d = r.d / -r.ny; if (d <= dy + 1) { p.y -= d + 0.01; found = true; p.g = true; p.gObj = o; p.vy = 0; } }
-        }
-        if (!found) p.y = oy;
-      }
-    }
-    wallCheck() {
-      const p = this.p, L = this.level; p.wall = 0;
-      if (p.g) return;
-      const hw = P.w / 2, hh = p.h / 2 - 6;
-      for (const s of [-1, 1]) {
-        const cx = p.x + s * 3;
-        for (const o of L.near(cx - hw, p.y - hh, cx + hw, p.y + hh)) {
-          if (o.gone || !SOLID.has(o.t) || o.t === 'Solid3' && false) continue;
-          const r = satBox(cx, p.y, hw, hh, o);
-          if (r && Math.abs(r.nx) > 0.7 && Math.sign(r.nx) === -s) { p.wall = s; break; }
-        }
-        if (p.wall) break;
-      }
-    }
-    checkHazards() {
-      const p = this.p, L = this.level, hw = P.w / 2 - 2, hh = p.h / 2 - 2;
-      for (const o of L.near(p.x - hw, p.y - hh, p.x + hw, p.y + hh)) {
-        if (o.gone || !SPIKE.has(o.t)) continue;
-        if (satBox(p.x, p.y, hw, hh, o)) { this.die(); return; }
-      }
-      for (const r of L.rockets) if (Math.abs(r.x - p.x) < hw + 8 && Math.abs(r.y - p.y) < hh + 6) { r.dead = true; this.explode(r.x, r.y); this.die(); return; }
-    }
-    checkTriggers(dt) {
-      const p = this.p, L = this.level;
-      const x0 = p.x - P.w / 2, x1 = p.x + P.w / 2, y0 = p.y - p.h / 2, y1 = p.y + p.h / 2;
-      for (const [o, t] of p.boostCd) { if (t - dt <= 0) p.boostCd.delete(o); else p.boostCd.set(o, t - dt); }
+      p.boosts = now;
+      // coin / flag / buttons
       for (const o of L.triggers) {
         if (o.gone) continue;
-        if (o.t === 'JumpBoost') {
-          if (p.boostCd.has(o)) continue;
-          if (Math.hypot(o.x - p.x, o.y - p.y) > 14 + Math.max(P.w / 2, p.h / 2) * 0.9) continue;
-          if (!bbHit([o.x - 12, o.y - 12, o.x + 12, o.y + 12], x0, y0, x1, y1)) continue;
-          const dx = Math.sin(o.a), dy = -Math.cos(o.a); const mag = P.jump * (0.4 + (o.f || 0.7));
-          const along = p.vx * dx + p.vy * dy; p.vx += (mag - along) * dx; p.vy += (mag - along) * dy;
-          if (Math.abs(dx) > 0.3) { p.maxS = Math.max(p.maxS, Math.abs(p.vx)); p.ign = 0.1; }
-          if (o.dc) { p.st = 'long'; p.maxS = Math.max(p.maxS, Math.abs(p.vx)); }
-          if (p.st === 'pound' || p.st === 'slide' || p.st === 'dive') { p.st = 'normal'; this.setH(P.h); }
-          p.g = false; p.boostCd.set(o, 0.25); sfx('JumpBoost', 0.45); this.puff(o.x, o.y, 6);
-        } else if (o.t === 'Coin') {
-          if (bbHit([o.x - 18, o.y - 18, o.x + 18, o.y + 18], x0, y0, x1, y1)) { o.gone = true; this.coinGot = true; sfx('coin1', 0.5); this.puff(o.x, o.y, 12, '#000'); }
-        } else if (o.t === 'EndFlag') {
-          if (bbHit([o.x - 30, o.bb[1], o.x + 30, o.bb[3]], x0, y0, x1, y1)) this.win();
-        } else if (o.t === 'ButtonTrigger') {
-          if (!o.pressed && bbHit(o.bb, x0, y0, x1, y1)) { o.pressed = true; L.trigger(o.id); sfx('Button', 0.5); }
-        } else if (o.t === 'Portal') {
-          if (p.portalCd > 0) continue;
-          const r = satBox(p.x, p.y, P.w / 2, p.h / 2, o); if (!r) continue;
-          const out = L.portals.find(q => q.id === o.tg && q !== o); if (!out) continue;
-          let sp = Math.hypot(p.vx, p.vy);
-          let ang;
-          if (o.fa) ang = o.fan * D2R; else ang = Math.atan2(p.vy, p.vx) + (out.a - o.a) + (o.inv ? Math.PI : 0);
-          if (o.fs) sp = o.fsp;
-          // exit on the side of out-portal the velocity points to
-          const nx = Math.cos(out.a), ny = Math.sin(out.a);
-          let vx = Math.cos(ang) * sp, vy = Math.sin(ang) * sp;
-          let sgn = vx * nx + vy * ny >= 0 ? 1 : -1;
-          p.x = out.x + nx * sgn * 26; p.y = out.y + ny * sgn * 26;
-          p.vx = vx; p.vy = vy; p.maxS = Math.max(p.maxS, Math.abs(vx)); if (p.st === 'normal' && Math.abs(vx) > P.maxSpeed) p.st = 'long';
-          p.portalCd = 0.25; sfx('Transition', 0.3);
+        if (o.t === 'Coin' && polyOverlap(P, o.poly)) { o.gone = true; this.coinGot = true; sfx('coin1', 0.5); this.puff(o.x, o.y, 12); }
+        else if (o.t === 'EndFlag' && polyOverlap(P, o.poly)) return this.win();
+        else if (o.t === 'ButtonTrigger' && !o.pressed && polyOverlap(P, o.poly)) { o.pressed = true; L.trigger(o.id); sfx('Button', 0.5); }
+      }
+      // portals
+      p.portalCd = Math.max(0, p.portalCd - dt);
+      if (p.portalCd <= 0) {
+        const [gx, gy] = this.down(), [rx, ry] = this.right();
+        const wvx = rx * p.dx + gx * p.dy, wvy = ry * p.dx + gy * p.dy;
+        const Pn = this.poly(p.x + wvx * dt, p.y + wvy * dt);
+        for (const o of L.portals) {
+          if (!polyOverlap(Pn, o.poly)) continue;
+          const out = L.portals.find(q => q.id === o.tg); if (!out) break;
+          const initA = o.a / D2R + (o.inv ? 180 : 0);
+          const sp = o.fs ? o.fsp : Math.hypot(wvx, wvy);
+          let na = o.fa ? o.fan : Math.atan2(wvy, wvx) / D2R + 180 - initA + out.a / D2R + (out.inv ? 180 : 0);
+          na *= o.inv ? -1 : 1;
+          const ex = out.w * 2.5 * (out.inv ? -1 : 1);
+          p.x = out.x + Math.cos(out.a) * ex; p.y = out.y + Math.sin(out.a) * ex;
+          const vx = Math.cos(na * D2R) * sp, vy = Math.sin(na * D2R) * sp;
+          p.dx = rx * vx + ry * vy; p.dy = gx * vx + gy * vy;
+          if (this.overlap(p.x, p.y + 1, true, p.x, p.y)) p.y -= 1;
+          p.portalCd = 0.12; sfx('Transition', 0.3);
+          break;
         }
       }
+      // gravity zones (red areas)
+      p.zoneCd = Math.max(0, p.zoneCd - dt);
+      const z = this.overlapsType(o => o.t === 'Tiledbackground');
+      if (p.zoneCd <= 0) {
+        if (z && !p.zoneIn) { this.setG(z.a / D2R + 90); p.ang = p.G - 90; p.zoneIn = true; p.zoneCd = 0.1; p.inv = between(p.G, 181, 359); }
+        else if (!z && p.zoneIn) { this.setG(90); p.ang = 0; p.zoneIn = false; p.zoneCd = 0.1; p.inv = false; }
+      }
     }
-    stepLaunchers(dt) {
+
+    // ---------- rockets ----------
+    stepRockets(dt) {
       const L = this.level, p = this.p;
       for (const o of L.launchers) {
-        if (!o.on) continue;
-        const dx = p.x - o.x, dy = p.y - o.y, d = Math.hypot(dx, dy);
-        if (d < 520 && !p.dead) {
-          const want = Math.atan2(dy, dx); o.aim += clampA(angDiff(want, o.aim), Math.PI * dt);
-          o.cool -= dt;
-          if (o.cool <= 0) { o.cool = 2; const sp = o.sp > 0 ? o.sp : 180; L.rockets.push({ x: o.x + Math.cos(o.aim) * 30, y: o.y + Math.sin(o.aim) * 30, a: o.aim, sp, life: 7 }); sfx('Rocket-2', 0.25); }
+        if (o.alive && !L.rockets.includes(o.alive)) o.alive = null;
+        const d = Math.hypot(p.x - o.x, p.y - o.y);
+        const los = !p.dead && this.trace(o.x, o.y, p.x, p.y) == null;
+        if (!los) continue;
+        const want = Math.atan2(p.y - o.y, p.x - o.x);
+        o.aim += clampA(angDiff(want, o.aim), Math.PI * dt);
+        o.cool = (o.cool || 0) - dt;
+        if (d <= 300 && o.cool <= 0 && !o.alive && o.on !== 0) {
+          o.cool = 1; const lo = o;
+          this.wait(0.2, () => {
+            const off = lo.w * (0.90625 - 0.125);
+            const r = { x: lo.x + Math.cos(lo.aim) * off, y: lo.y + Math.sin(lo.aim) * off, a: lo.aim, sp: lo.sp > 0 ? lo.sp : 400, w: 32, h: 16 };
+            lo.alive = r; L.rockets.push(r); sfx('Rocket-2', 0.3);
+          });
         }
       }
       for (const r of L.rockets) {
-        if (!p.dead) r.a += clampA(angDiff(Math.atan2(p.y - r.y, p.x - r.x), r.a), Math.PI * dt);
-        r.x += Math.cos(r.a) * r.sp * dt; r.y += Math.sin(r.a) * r.sp * dt; r.life -= dt;
-        if (Math.random() < 0.3) this.particles.push({ x: r.x - Math.cos(r.a) * 14, y: r.y - Math.sin(r.a) * 14, vx: 0, vy: 0, life: 0.4, c: '#999', s: 4 });
-        for (const o of L.near(r.x - 4, r.y - 4, r.x + 4, r.y + 4)) {
-          if (!o.gone && SOLID.has(o.t) && satBox(r.x, r.y, 4, 4, o)) { r.dead = true; this.explode(r.x, r.y); break; }
+        if (!p.dead) r.a += clampA(angDiff(Math.atan2(p.y - r.y, p.x - r.x), r.a), 3 * D2R);
+        r.x += Math.cos(r.a) * r.sp * dt; r.y += Math.sin(r.a) * r.sp * dt;
+        const c = Math.cos(r.a), s = Math.sin(r.a);
+        r.poly = [[0, -8], [32, -8], [32, 8], [0, 8]].map(([u, v]) => [r.x + u * c - v * s, r.y + u * s + v * c]);
+        if (Math.random() < 0.5) this.particles.push({ x: r.x, y: r.y, vx: 0, vy: 0, life: 0.4, c: '#aaa', s: 4, g: -20 });
+        const bb = [r.x - 34, r.y - 34, r.x + 34, r.y + 34];
+        for (const o of L.near(bb[0], bb[1], bb[2], bb[3])) {
+          if (!o.gone && SOLID.has(o.t) && polyOverlap(r.poly, o.poly)) { r.dead = true; this.explode(r.x + c * 16, r.y + s * 16); break; }
         }
-        if (r.life <= 0) { r.dead = true; this.explode(r.x, r.y); }
+        if (Math.abs(r.x) > 1e5) r.dead = true;
       }
       L.rockets = L.rockets.filter(r => !r.dead);
     }
-    explode(x, y) { for (let i = 0; i < 12; i++) this.particles.push({ x, y, vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400, life: 0.5, c: i % 2 ? '#f80a19' : '#000', s: 5 }); }
+    explode(x, y) { sfx('Pound', 0.3); for (let i = 0; i < 12; i++) this.particles.push({ x, y, vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400, life: 0.5, c: i % 2 ? '#f80a19' : '#000', s: 5 }); }
     puff(x, y, n, c) { for (let i = 0; i < n; i++) this.particles.push({ x, y, vx: (Math.random() - 0.5) * 160, vy: -Math.random() * 120, life: 0.35 + Math.random() * 0.2, c: c || '#000', s: 3 }); }
+    ghost() { const p = this.p; this.particles.push({ kind: 'ghost', x: p.x, y: p.y, side: p.side, ang: p.ang, frame: p.frame, anim: p.anim, life: 0.35, vx: 0, vy: 0, g: 0, st: this.animState() }); }
     stepParticles(dt) {
-      for (const q of this.particles) { q.vy += (q.g || 600) * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; if (q.rs) q.r += q.rs * dt; }
+      for (const q of this.particles) { if (q.drag) { q.vx *= 0.94; q.vy *= 0.94; } q.vy += (q.g == null ? 600 : q.g) * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; if (q.rs) q.r += q.rs * dt; }
       this.particles = this.particles.filter(q => q.life > 0);
     }
     die() {
       const p = this.p; if (p.dead || this.won) return;
-      p.dead = 0.7; this.deaths++; sfx('Death', 0.5); this.shake = 0.25;
-      // body parts fly off like the original ragdoll
-      const parts = [[0, -20, 'head'], [0, 0, 'line'], [-6, 8, 'line'], [6, 8, 'line'], [-8, -6, 'line'], [8, -6, 'line']];
-      for (const [ox, oy, k] of parts) this.particles.push({ x: p.x + ox, y: p.y + oy, vx: p.vx * 0.4 + (Math.random() - 0.5) * 500, vy: p.vy * 0.3 - 200 - Math.random() * 300, life: 1.2, c: '#000', s: 4, kind: k, r: 0, rs: (Math.random() - 0.5) * 20, g: 1500 });
+      p.dead = 0.75; this.deaths++; sfx('Death', 0.5); sfx('Pound', 0.35); this.shake = 0.2;
+      this.wait(0.1, () => sfx('Transition', 0.3));
+      const [gx, gy] = this.down(), [rx, ry] = this.right();
+      const vx = rx * p.dx + gx * p.dy, vy = ry * p.dx + gy * p.dy;
+      const parts = [[0, -20, 'head'], [0, 0, 'line'], [-6, 14, 'line'], [6, 14, 'line'], [-8, -4, 'line'], [8, -4, 'line']];
+      for (const [ox, oy, k] of parts) this.particles.push({ x: p.x + ox, y: p.y + oy, vx: vx * 0.9 + (Math.random() - 0.5) * 120, vy: vy * 0.9 + (Math.random() - 0.5) * 120, life: 0.75, c: '#000', s: 4, kind: k, r: 0, rs: (Math.random() - 0.5) * 14, g: 0, drag: true });
       if (this.onDeath) this.onDeath();
     }
     win() {
-      if (this.won) return; this.won = true; sfx('Transition', 0.5);
-      for (let i = 0; i < 30; i++) this.particles.push({ x: this.p.x, y: this.p.y, vx: (Math.random() - 0.5) * 600, vy: -Math.random() * 600, life: 1.2, c: '#000', s: 4 });
-      if (this.onWin) setTimeout(() => this.onWin({ time: this.time, deaths: this.deaths, coin: this.coinGot }), 650);
+      if (this.won) return; this.won = true;
+      if (this.onWin) setTimeout(() => this.onWin({ time: this.time, deaths: this.deaths, coin: this.coinGot }), 500);
+    }
+    animState() {
+      const p = this.p;
+      if (p.Pound) return 'pound';
+      if (p.Plunge) return 'dive';
+      if (p.Sliding || p.Slipping) return 'slide';
+      if (p.WaveDash) return 'slide';
+      if (p.Stun) return 'stun';
+      if (p.floor) return this.moving() ? 'run' : 'idle';
+      if ((this.byWall(0) || this.byWall(1)) && p.dy > 0) return 'wall';
+      return p.dy < 0 ? 'jump' : 'fall';
     }
 
     // ---------- rendering ----------
-    viewScale() {
-      const W = this.cv.width, H = this.cv.height;
-      return Math.min(H / (this.viewH || 620), W / 760);
-    }
     render(dt) {
       const cv = this.cv, ctx = this.ctx;
       const W = cv.width, H = cv.height;
       if (!this.level) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); return; }
       const L = this.level, p = this.p;
-      const s = this.viewScale(); const vw = W / s, vh = H / s;
-      // camera
-      if (!p.dead) {
-        const tx = p.x + p.vx * 0.22, ty = p.y + Math.max(-60, Math.min(80, p.vy * 0.08));
-        const k = 1 - Math.exp(-dt * 7);
-        this.cam.x += (tx - this.cam.x) * k; this.cam.y += (ty - this.cam.y) * k;
-      }
+      // "Scale outer" with a 640x640 base, like the original project
+      const s = Math.min(W, H) / 640; const vw = W / s, vh = H / s;
+      const al = Math.min(1, this.acc / TICK);
+      const px = this.prevPos.x + (p.x - this.prevPos.x) * al, py = this.prevPos.y + (p.y - this.prevPos.y) * al;
+      if (!p.dead) { const k = 1 - Math.pow(0.5, dt * 60); this.cam.x += (px - this.cam.x) * k; this.cam.y += (py - this.cam.y) * k; }
       let cx = this.cam.x, cy = this.cam.y;
-      const m = 40;
-      cx = L.w + 2 * m > vw ? Math.max(vw / 2 - m, Math.min(L.w + m - vw / 2, cx)) : L.w / 2;
-      cy = L.h + 2 * m > vh ? Math.max(vh / 2 - m, Math.min(L.h + m - vh / 2, cy)) : L.h / 2;
-      if (this.shake > 0) { this.shake -= dt; cx += (Math.random() - 0.5) * 10; cy += (Math.random() - 0.5) * 10; }
-      this.camView = { cx, cy, s, vw, vh };
+      // original levels use unbounded scrolling: the camera just follows the player
+      if (this.shake > 0) { this.shake -= dt; cx += (Math.random() - 0.5) * 8; cy += (Math.random() - 0.5) * 8; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = L.bg; ctx.fillRect(0, 0, W, H);
-      ctx.setTransform(s, 0, 0, s, W / 2 - cx * s, H / 2 - cy * s);
-      ctx.imageSmoothingEnabled = false;
+      ctx.setTransform(s, 0, 0, s, Math.round(W / 2 - cx * s), Math.round(H / 2 - cy * s));
+      ctx.imageSmoothingEnabled = true;
       const vx0 = cx - vw / 2 - 64, vy0 = cy - vh / 2 - 64, vx1 = cx + vw / 2 + 64, vy1 = cy + vh / 2 + 64;
-      // outside-of-level shade
-      ctx.fillStyle = 'rgba(0,0,0,0.035)';
-      ctx.fillRect(vx0, vy0, vx1 - vx0, Math.max(0, -vy0));
       for (const o of L.objs) {
-        if (o.gone || o.inv && o.t !== 'Portal') continue;
-        if (!o.bb || !bbHit(o.bb, vx0, vy0, vx1, vy1)) { if (o.bb || !o.tx) continue; }
+        if (o.gone || o.inv) continue;
+        if (o.bb && !bbHit(o.bb, vx0, vy0, vx1, vy1)) continue;
         this.drawObj(ctx, o);
       }
-      for (const r of L.rockets) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.a); ctx.drawImage(IMG.rocket, -16, -8); ctx.restore(); }
-      if (!p.dead && !(this.won && this.p)) this.drawPlayer(ctx, p);
-      else if (this.won) this.drawPlayer(ctx, p);
+      for (const r of L.rockets) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.a); ctx.drawImage(IMG.rocket, 0, -8, 32, 16); ctx.restore(); }
+      for (const q of this.particles) if (q.kind === 'ghost') { ctx.globalAlpha = q.life / 0.35 * 0.35; this.drawPlayer(ctx, q, q.x, q.y, q.st); }
+      ctx.globalAlpha = 1;
+      if (!p.dead) this.drawPlayer(ctx, p, px, py, this.animState());
       for (const q of this.particles) {
+        if (q.kind === 'ghost') continue;
         ctx.globalAlpha = Math.min(1, q.life * 2.5); ctx.fillStyle = q.c; ctx.strokeStyle = q.c;
         if (q.kind === 'head') { ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, 7); ctx.fill(); }
         else if (q.kind === 'line') { ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.r); ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(8, 0); ctx.stroke(); ctx.restore(); }
@@ -591,21 +899,23 @@
       ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.a);
       const ox = -o.hx * o.w, oy = -o.hy * o.h;
       switch (t) {
-        case 'Solid': case 'UnmovableSolid': ctx.fillStyle = '#000'; ctx.fillRect(ox, oy, o.w, o.h); break;
-        case 'Solid2': ctx.fillStyle = '#fff'; ctx.fillRect(ox, oy, o.w, o.h); break;
+        case 'Solid': case 'UnmovableSolid': ctx.fillStyle = '#000'; ctx.fillRect(ox - 0.3, oy - 0.3, o.w + 0.6, o.h + 0.6); break;
+        case 'Solid2': ctx.fillStyle = '#fff'; ctx.fillRect(ox - 0.3, oy - 0.3, o.w + 0.6, o.h + 0.6); break;
         case 'SolidMove': ctx.fillStyle = '#ff0000'; ctx.fillRect(ox, oy, o.w, o.h); break;
-        case 'GroundPoundSolid': ctx.fillStyle = '#f80a19'; ctx.fillRect(ox, oy, o.w, o.h); ctx.fillStyle = 'rgba(255,255,255,.35)';
-          for (let x = ox + 4; x < ox + o.w; x += 12) ctx.fillRect(x, oy + 2, 4, Math.max(2, o.h - 4)); break;
-        case 'JumpThrough': case 'UnmovableJumpThrough': ctx.fillStyle = '#000'; ctx.fillRect(ox, oy, o.w, 2);
-          for (let y = oy + 3; y < oy + o.h; y += 3) ctx.fillRect(ox, y, o.w, 1); break;
-        case 'Spike': ctx.drawImage(IMG.spike, ox, oy, o.w, o.h); break;
-        case 'Spike2': ctx.drawImage(IMG.spike2, ox, oy, o.w, o.h); break;
+        case 'GroundPoundSolid': ctx.fillStyle = IMG.gpsolid.complete && IMG.gpsolid.width ? ctx.createPattern(IMG.gpsolid, 'repeat') : '#f80a19'; ctx.translate(ox, oy); ctx.fillRect(0, 0, o.w, o.h); break;
+        case 'JumpThrough': case 'UnmovableJumpThrough': {
+          const im = t === 'JumpThrough' ? IMG.jumpthrough : IMG.ujumpthrough;
+          ctx.translate(ox, oy); ctx.fillStyle = im.complete && im.width ? ctx.createPattern(im, 'repeat') : '#000'; ctx.fillRect(0, 0, o.w, o.h); break;
+        }
+        case 'Spike': case 'Spike2':
+          ctx.fillStyle = t === 'Spike' ? '#000' : '#fff';
+          ctx.beginPath(); ctx.moveTo(ox + o.w * 0.5, oy); ctx.lineTo(ox + o.w, oy + o.h); ctx.lineTo(ox, oy + o.h); ctx.closePath(); ctx.fill(); break;
         case 'JumpBoost': ctx.drawImage(IMG.boost, ox, oy, o.w, o.h); break;
-        case 'Coin': { const b = Math.sin(this.level.time * 3) * 4; ctx.drawImage(IMG.coin, ox, oy + b, o.w, o.h); break; }
+        case 'Coin': ctx.drawImage(IMG.coin, ox, oy, o.w, o.h); break;
         case 'EndFlag': ctx.drawImage(IMG.flag, ox, oy, o.w, o.h); break;
         case 'RocketLauncher': ctx.restore(); ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.aim); ctx.drawImage(IMG.launcher, -o.hx * o.w, -o.hy * o.h, o.w, o.h); break;
-        case 'ButtonTrigger': if (!o.inv) ctx.drawImage(o.pressed ? IMG.button_on : IMG.button, ox, oy, o.w, o.h); break;
-        case 'Portal': { ctx.fillStyle = 'hsl(' + ((o.id * 67) % 360) + ',85%,55%)'; ctx.fillRect(ox, oy, o.w, o.h); ctx.globalAlpha = 0.25; ctx.fillRect(ox - 6, oy, o.w + 12, o.h); break; }
+        case 'ButtonTrigger': ctx.drawImage(o.pressed ? IMG.button_on : IMG.button, ox, oy, o.w, o.h); break;
+        case 'Portal': ctx.drawImage(IMG.portal, ox, oy, o.w, o.h); break;
         case 'Tiledbackground': ctx.fillStyle = 'rgba(242,12,25,0.08)'; ctx.fillRect(ox, oy, o.w, o.h); break;
         case 'SpriteFontDeluxe': case 'SpriteFontDeluxeW': case 'Text': {
           const sc = o.sc || 1, fs = 15 * sc;
@@ -619,44 +929,51 @@
       }
       ctx.restore();
     }
-    drawPlayer(ctx, p) {
+    drawPlayer(ctx, p, x, y, st) {
       ctx.save();
-      const feet = p.y + p.h / 2;
-      ctx.translate(p.x, feet); ctx.scale(p.side, 1);
+      ctx.translate(x, y); ctx.rotate((p.ang || 0) * D2R); ctx.translate(0, 32); ctx.scale(p.side, 1);
       ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      const t = p.anim, run = p.g && Math.abs(p.vx) > 20;
+      const t = (p.anim || 0) * 12;
       const line = (pts) => { ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]); ctx.stroke(); };
-      if (p.st === 'slide' || p.st === 'dive') {
-        // body horizontal
-        const lean = p.st === 'dive' ? -6 : 0;
-        ctx.beginPath(); ctx.arc(16, -12 + lean, 8, 0, 7); ctx.fill();
-        line([8, -10 + lean, -12, -8]);
-        line([-12, -8, -24, -4]); line([-12, -8, -22, -12]);
-        line([4, -10 + lean, 20, -2]); line([2, -10 + lean, 18, -20 + lean]);
-      } else if (p.st === 'pound') {
-        ctx.beginPath(); ctx.arc(0, -46, 9, 0, 7); ctx.fill();
-        line([0, -36, 0, -22]); line([0, -22, -10, -14, -4, -4]); line([0, -22, 10, -14, 4, -4]);
-        line([0, -32, -12, -40]); line([0, -32, 12, -40]);
-      } else if (!p.g && p.wall && p.vy > 0) {
-        ctx.scale(-1, 1);
+      if (st === 'slide') {
+        ctx.beginPath(); ctx.arc(14, -14, 8, 0, 7); ctx.fill();
+        line([6, -12, -12, -8]); line([-12, -8, -24, -4]); line([-12, -8, -22, -12]);
+        line([4, -11, 18, -3]); line([2, -11, 16, -22]);
+      } else if (st === 'dive') {
+        ctx.beginPath(); ctx.arc(18, -16, 8, 0, 7); ctx.fill();
+        line([10, -15, -10, -14]); line([-10, -14, -22, -10]); line([-10, -14, -22, -18]);
+        line([8, -15, 26, -20]); line([8, -15, 24, -10]);
+      } else if (st === 'pound') {
+        ctx.beginPath(); ctx.arc(0, -40, 9, 0, 7); ctx.fill();
+        line([0, -30, 0, -18]); line([0, -18, -10, -10, -4, 0]); line([0, -18, 10, -10, 4, 0]);
+        line([0, -27, -12, -16]); line([0, -27, 12, -16]);
+      } else if (st === 'wall') {
         ctx.beginPath(); ctx.arc(-2, -46, 9, 0, 7); ctx.fill();
-        line([0, -36, 2, -20]); line([2, -20, -6, -10, -8, 0]); line([2, -20, 10, -10, 8, -2]);
-        line([0, -32, -10, -44]); line([0, -32, 10, -26]);
+        line([0, -36, 2, -20]); line([2, -20, 8, -10, 6, 0]); line([2, -20, -6, -10, -4, -2]);
+        line([0, -32, 8, -44]); line([0, -32, -8, -24]);
+      } else if (st === 'stun') {
+        ctx.beginPath(); ctx.arc(-4, -44, 9, 0, 7); ctx.fill();
+        line([-2, -34, 0, -20]); line([0, -20, -8, -10, -10, 0]); line([0, -20, 6, -10, 8, 0]);
+        line([-2, -30, -14, -36]); line([-2, -30, 10, -38]);
       } else {
-        const sw = run ? Math.sin(t) : (p.g ? 0 : 0.6);
-        const sw2 = run ? Math.cos(t) : 0;
-        const bob = run ? Math.abs(Math.cos(t)) * 2 : 0;
-        const lean = run ? Math.min(6, Math.abs(p.vx) / 60) : 0;
+        const run = st === 'run';
+        const spd = Math.min(1.4, Math.abs(p.dx || 0) / 330);
+        const sw = run ? Math.sin(t * (0.6 + spd * 0.5)) : 0, sw2 = run ? Math.cos(t * (0.6 + spd * 0.5)) : 0;
+        const bob = run ? Math.abs(sw2) * 2 : 0, lean = run ? 4 * spd : 0;
         ctx.beginPath(); ctx.arc(lean, -46 - bob, 9, 0, 7); ctx.fill();
         line([lean, -36 - bob, 0, -22 - bob]);
-        if (p.g) {
+        if (st === 'run' || st === 'idle') {
           line([0, -22 - bob, 8 * sw, -11 + 3 * Math.max(0, -sw2), 12 * sw, 0]);
           line([0, -22 - bob, -8 * sw, -11 + 3 * Math.max(0, sw2), -12 * sw, 0]);
-        } else {
+          const aS = run ? sw * 10 : 2;
+          line([lean * 0.7, -32 - bob, -aS, -21 - bob]); line([lean * 0.7, -32 - bob, aS, -21 - bob]);
+        } else if (st === 'jump') {
           line([0, -22, 8, -14, 6, -4]); line([0, -22, -6, -12, -12, -8]);
+          line([0, -32, -8, -42]); line([0, -32, 10, -40]);
+        } else {
+          line([0, -22, 6, -12, 4, -2]); line([0, -22, -6, -12, -6, -2]);
+          line([0, -32, -12, -38]); line([0, -32, 12, -38]);
         }
-        const aSw = run ? sw * 10 : (p.g ? 2 : -8);
-        line([lean * 0.7, -32 - bob, -aSw, -22 - bob]); line([lean * 0.7, -32 - bob, aSw, -22 - bob + (p.g ? 0 : -14)]);
       }
       ctx.restore();
     }
