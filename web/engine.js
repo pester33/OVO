@@ -383,6 +383,7 @@
         while (this.acc >= TICK && n < 12) { this.prevPos = { x: this.p.x, y: this.p.y }; this.tick(); this.acc -= TICK; n++; }
         if (n >= 12) this.acc = 0;
       }
+      if (window.OvOMP && this.running) { try { window.OvOMP.frame(this, dt); } catch (e) {} }
       this.render(dt);
     }
 
@@ -993,6 +994,7 @@
       if (hk.practice && this.checkpoints) for (const c of this.checkpoints) { ctx.save(); ctx.translate(c.x, c.y + 32); ctx.fillStyle = '#00c040'; ctx.beginPath(); ctx.moveTo(0, -40); ctx.lineTo(10, -20); ctx.lineTo(0, 0); ctx.lineTo(-10, -20); ctx.closePath(); ctx.globalAlpha = 0.7; ctx.fill(); ctx.restore(); }
       for (const q of this.particles) if (q.kind === 'ghost' && q.rig) drawRig(ctx, q.rig, 0, 0, q.life / 0.35 * 0.6);
       ctx.globalAlpha = 1;
+      if (window.OvOMP) { try { window.OvOMP.draw(ctx, this); } catch (e) {} }
       if (p.rig) drawRig(ctx, p.rig, p.dead ? 0 : px - p.x, p.dead ? 0 : py - p.y, p.dead ? Math.max(0, p.dead / 0.75) : 1);
       for (const q of this.particles) {
         if (q.kind === 'ghost') continue;
