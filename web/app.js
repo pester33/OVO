@@ -73,11 +73,13 @@
     for (const k in screens) $(screens[k]).hidden = true;
     editor.close(); cv.hidden = false;
     $('#hud').hidden = false; $('#hudLevel').textContent = label; setTouch(true); closeDlg();
+    $('#btnStop').hidden = !(current && current.fromEditor);
     game.hard = !!opts.hard; game.load(def); game.cam.x = game.p.x; game.cam.y = game.p.y;
     OvO.playMusic('Track1'); resize();
   }
 
   game.onWin = res => {
+    if (current && current.fromEditor) return stopPlaytest('Level complete! ' + res.time.toFixed(2) + 's · ' + res.deaths + ' deaths');
     let best = false;
     if (current.kind === 'main') {
       const prev = progress.done[current.n]; if (prev == null || res.time < prev) { progress.done[current.n] = res.time; best = prev != null; }
@@ -97,10 +99,10 @@
         <button data-a="menu">${current.kind === 'main' ? 'Level select' : 'Custom levels'}</button>
       </div>`, {
       next: () => playMain(current.n + 1), retry: () => { closeDlg(); game.restart(); setTouch(true); },
-      menu: () => leaveLevel(), edit: () => openEditor(current.data),
+      menu: () => leaveLevel(), edit: () => stopPlaytest(),
     });
   };
-  function leaveLevel() { closeDlg(); if (current && current.fromEditor) return openEditor(current.data); show(current && current.kind === 'custom' ? 'custom' : 'levels'); current = null; }
+  function leaveLevel() { closeDlg(); if (current && current.fromEditor) return stopPlaytest(); show(current && current.kind === 'custom' ? 'custom' : 'levels'); current = null; }
 
   function pause() {
     if (!game.running || game.won) return;
@@ -111,7 +113,7 @@
       <button data-a="quit">Quit</button></div>`, {
       resume: () => { closeDlg(); game.paused = false; setTouch(true); },
       restart: () => { closeDlg(); game.paused = false; game.restart(); setTouch(true); },
-      edit: () => { game.paused = false; openEditor(current.data); },
+      edit: () => { game.paused = false; stopPlaytest(); },
       quit: () => { game.paused = false; leaveLevel(); },
     }, () => { game.paused = false; setTouch(true); });
   }
@@ -198,23 +200,55 @@
   };
 
   // ---------- editor ----------
-  function openEditor(data) {
-    closeDlg(); current = null; game.running = false;
+  function formDlg(title, body, onOk) {
+    dialog(`<h2>${title}</h2><div class="form">${body}</div><div class="btns"><button class="primary" data-a="ok">OK</button><button data-a="cancel">Cancel</button></div>`, {
+      ok: () => {
+        const f = {}; $('#dlgBox').querySelectorAll('input,select').forEach(i => { f[i.id] = i.type === 'checkbox' ? i.checked : i.value; });
+        closeDlg(); onOk(f);
+      }, cancel: closeDlg,
+    });
+    const first = $('#dlgBox').querySelector('input'); if (first && !isTouch) setTimeout(() => first.focus(), 50);
+  }
+  function editorHelp() {
+    toast(`<b>Build</b>: pick an object below and tap the grid to place it. Turn on <b>Swipe</b> (or hold Shift) to paint while dragging.<br><br>
+      <b>Edit</b>: tap an object to select it (green). Swipe on = box select. Drag a selection to move it, or use the arrow buttons. Rotate, flip, scale, copy/paste, Group ID and Edit Object are in the panel.<br><br>
+      <b>Move trigger</b>: give objects a Group ID, place a Move trigger, then Edit Object to set its target group, distance and time. It fires when the player passes it.<br><br>
+      <b>Delete</b>: tap objects to remove them.<br><br>
+      Drag empty space to scroll · pinch or mouse wheel to zoom · ▶ playtests.<br>
+      Keys: 1/2/3 modes · WASD move · Q/E rotate · Ctrl+C/V/D · Del · Ctrl+Z/Y · Enter playtest`);
+  }
+  function openEditor(data, trail) {
+    closeDlg(); current = null; game.running = false; game.trail = null;
     for (const k in screens) $(screens[k]).hidden = true;
     $('#hud').hidden = true; setTouch(false); $('#rotateHint').hidden = true;
     cv.hidden = true; OvO.playMusic(null);
     editor.open(data, {
-      save: d => { persist(d); editor.hint('Saved ✓'); setTimeout(() => editor.setTool(editor.tool), 1200); },
-      test: d => { persist(d); playCustom(d, true); },
-      exit: d => { persist(d); editor.close(); cv.hidden = false; show('custom'); },
-      prompt: (t, v, cb) => promptDlg(t, v, cb),
-      more: d => dialog(`<h2>Level</h2><div class="btns"><button data-a="share">Share / export</button><button data-a="clear" class="danger">Clear everything</button><button data-a="help">Controls help</button><button data-a="close">Close</button></div>`, {
-        share: () => { persist(d); shareLevel(d); }, close: closeDlg,
-        clear: () => { editor.snapshot(); editor.data.objs = []; closeDlg(); },
-        help: () => toast('Pick a tool at the bottom, then tap/drag on the grid.<br><br>Two fingers (or right-drag / mouse wheel) to pan &amp; zoom.<br>⟳ rotates spikes, boosts and portals.<br>Keys: 1–9 tools, Q rotate, E erase, Ctrl+Z undo.'),
-      }),
+      test: d => { persist(d); playCustom(d, true); game.trail = []; },
+      form: formDlg,
+      menu: d => {
+        dialog(`<h2>Editor</h2><label class="fl">Name <input id="edNameIn" maxlength="40" value="${esc(d.name || '')}"></label>
+          <div class="btns"><button class="primary" data-a="resume">Resume</button><button data-a="save">Save</button><button data-a="saveexit">Save and exit</button>
+          <button data-a="share">Share / export</button><button data-a="help">How to use the editor</button>
+          <button data-a="clear" class="danger">Clear level</button><button data-a="exit" class="danger">Exit without saving</button></div>`, {
+          resume: () => { d.name = $('#edNameIn').value || d.name; closeDlg(); },
+          save: () => { d.name = $('#edNameIn').value || d.name; persist(d); closeDlg(); editor.hint('Saved ✓'); },
+          saveexit: () => { d.name = $('#edNameIn').value || d.name; persist(d); closeDlg(); editor.close(); cv.hidden = false; show('custom'); },
+          share: () => { d.name = $('#edNameIn').value || d.name; persist(d); shareLevel(d); },
+          help: editorHelp,
+          clear: () => { editor.snapshot(); editor.data.objs = []; editor.sel.clear(); closeDlg(); },
+          exit: () => { closeDlg(); editor.close(); cv.hidden = false; show('custom'); },
+        });
+      },
     });
+    if (trail && trail.length) editor.trail = trail;
   }
+  function stopPlaytest(msg) {
+    if (!current || !current.fromEditor) return;
+    const t = game.trail; game.running = false; game.paused = false;
+    openEditor(current.data, t);
+    if (msg) editor.hint(msg);
+  }
+  $('#btnStop').onclick = () => stopPlaytest();
   function persist(d) {
     d = JSON.parse(JSON.stringify(d)); if (!d.id) d.id = 'my-' + Date.now();
     const i = mine.findIndex(m => m.id === d.id); if (i >= 0) mine[i] = d; else mine.unshift(d);
@@ -228,6 +262,7 @@
     if (!$('#hud').hidden) {
       const k = KEYS[e.key]; if (k) { if (!e.repeat) game.key(k, 1); e.preventDefault(); }
       if ((e.key === 'r' || e.key === 'R') && !game.won && $('#dlg').hidden) game.restart();
+      if (e.key === 'Escape' && current && current.fromEditor && $('#dlg').hidden) { stopPlaytest(); return; }
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') { if ($('#dlg').hidden) pause(); else if (dlgCancel) { const f = dlgCancel; closeDlg(); f(); } }
     }
   });

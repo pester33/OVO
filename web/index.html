@@ -21,6 +21,7 @@
 <div id="hud" hidden>
   <div class="hud-left">
     <button class="icon" id="btnPause" aria-label="Pause">II</button>
+    <button class="icon" id="btnStop" aria-label="Stop playtest" hidden>■</button>
     <div id="hudLevel">1</div>
   </div>
   <div class="hud-right"><span id="hudCoin" hidden>©</span><span id="hudDeaths">0</span><span id="hudTime">0.00</span></div>
@@ -107,17 +108,30 @@
 
   <!-- editor UI -->
   <section id="scrEditor" class="screen editor-ui" hidden>
-    <div class="ed-top">
-      <button class="back" id="edBack">‹</button>
-      <input id="edName" maxlength="40" placeholder="Level name">
-      <button id="edUndo" title="Undo">↶</button>
-      <button id="edRotate" title="Rotate (Q)">⟳ <span id="edRotVal">0°</span></button>
-      <button id="edSave">Save</button>
-      <button id="edTest" class="primary">▶ Test</button>
+    <div class="gd-top">
+      <button id="gdMenu" title="Menu (save, exit, share)">II</button>
+      <button id="gdUndo" title="Undo (Ctrl+Z)">↶</button>
+      <button id="gdRedo" title="Redo (Ctrl+Y)">↷</button>
+      <button id="gdTrash" title="Delete selected (Del)">🗑</button>
     </div>
-    <div class="ed-tools" id="edTools"></div>
-    <div class="ed-zoom"><button id="edZoomIn">+</button><button id="edZoomOut">−</button><button id="edMore">⋯</button></div>
-    <div class="ed-hint" id="edHint"></div>
+    <div class="gd-right">
+      <button id="gdSwipe" title="Swipe: paint / box-select / delete while dragging (or hold Shift)">Swipe</button>
+      <button id="gdZoomIn" title="Zoom in">＋</button>
+      <button id="gdZoomOut" title="Zoom out">－</button>
+    </div>
+    <button id="gdPlay" class="gd-play" title="Playtest (Enter)">▶</button>
+    <div class="gd-hint" id="gdHint"></div>
+    <div class="gd-panel">
+      <div class="gd-modes">
+        <button class="gd-mode on" data-mode="build">BUILD</button>
+        <button class="gd-mode" data-mode="edit">EDIT</button>
+        <button class="gd-mode" data-mode="delete">DELETE</button>
+      </div>
+      <div class="gd-content">
+        <div class="gd-tabs" id="gdTabs"></div>
+        <div class="gd-gridwrap"><button class="gd-page" id="gdPrev">‹</button><div class="gd-grid" id="gdGrid"></div><button class="gd-page" id="gdNext">›</button></div>
+      </div>
+    </div>
   </section>
 </div>
 

@@ -140,12 +140,18 @@
         if (['JumpBoost', 'Portal', 'ButtonTrigger', 'Coin', 'EndFlag'].includes(o.t)) this.triggers.push(o);
       }
       if (!this.start) this.start = { x: 100, y: 100 };
+      // GD-style move triggers: objects in a targeted group become dynamic
+      this.moveTriggers = this.objs.filter(o => o.t === 'MoveTrigger');
+      const targeted = new Set(this.moveTriggers.map(t => t.tg));
+      this.groups = new Map();
+      for (const o of this.objs) if (o.g != null && targeted.has(o.g) && o.t !== 'MoveTrigger') { o.dyn = true; if (!this.groups.has(o.g)) this.groups.set(o.g, []); this.groups.get(o.g).push(o); }
+      this.moves = [];
       this.setupAreas();
       this.grid = new Grid(192);
       this.dynamic = [];
       const gobj = this.solids.concat(this.hazards, this.zones);
-      for (const o of gobj) if (!o.pin) this.grid.add(o);
-      this.dynamic = gobj.filter(o => o.pin);
+      for (const o of gobj) if (!o.pin && !o.dyn) this.grid.add(o);
+      this.dynamic = gobj.filter(o => o.pin || o.dyn);
       this.stamp = 1;
       this.time = 0;
     }
@@ -218,6 +224,22 @@
         o.x = p.a.x + r[0]; o.y = p.a.y + r[1]; o.a = p.a.a + p.la;
         if (o.x !== o.px || o.y !== o.py || o.a !== o.pa) updatePoly(o);
       }
+    }
+    fireMove(t) {
+      if (t.fired) return; t.fired = true;
+      const objs = this.groups.get(t.tg) || []; if (!objs.length) return;
+      this.moves.push({ objs, mx: t.mx || 0, my: t.my || 0, dur: Math.max(0, t.dur || 0), ease: t.ease || 'linear', t: 0, cx: 0, cy: 0 });
+    }
+    stepMoves(dt) {
+      if (!this.moves.length) return;
+      const E = { linear: k => k, in: k => k * k, out: k => 1 - (1 - k) * (1 - k), inout: k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2 };
+      for (const m of this.moves) {
+        m.t += dt; const k = (E[m.ease] || E.linear)(m.dur > 0 ? Math.min(1, m.t / m.dur) : 1);
+        const nx = m.mx * k, ny = m.my * k, ddx = nx - m.cx, ddy = ny - m.cy; m.cx = nx; m.cy = ny;
+        if (ddx || ddy) for (const o of m.objs) { o.x += ddx; o.y += ddy; if (o.poly) updatePoly(o); }
+        if (m.dur <= 0 || m.t >= m.dur) m.done = true;
+      }
+      this.moves = this.moves.filter(m => !m.done);
     }
     near(x0, y0, x1, y1) {
       const out = []; this.stamp++;
@@ -598,9 +620,10 @@
       const L = this.level, p = this.p, dt = TICK;
       this.clock += dt; L.time += dt;
       // moving areas (carry the player when standing on a moving solid)
-      const fo = p.floor && p.floorObj && p.floorObj.pin ? p.floorObj : null; let rel = null;
+      const fo = p.floor && p.floorObj && (p.floorObj.pin || p.floorObj.dyn) ? p.floorObj : null; let rel = null;
       if (fo) { const r = rot(p.x - fo.x, p.y - fo.y, -fo.a); rel = r; }
       L.stepAreas(dt);
+      L.stepMoves(dt);
       if (fo && !p.dead) { const r = rot(rel[0], rel[1], fo.a); p.x = fo.x + r[0]; p.y = fo.y + r[1]; }
       this.stepRockets(dt);
       this.stepParticles(dt);
@@ -613,6 +636,7 @@
       this.time += dt;
       this.readInput();
       this.platformTick(dt);
+      if (this.trail && (this.trail.n = (this.trail.n || 0) + 1) % 3 === 0 && this.trail.length < 20000) this.trail.push([Math.round(p.x), Math.round(p.y + 24)]);
       if (p.landed) { p.lastLanded = this.clock; if (!p.Pound) this.puff(p.x, p.y + 30, 3); }
       this.events(dt);
       this.gameplay(dt);
@@ -795,6 +819,11 @@
         if (o.t === 'Coin' && polyOverlap(P, o.poly)) { o.gone = true; this.coinGot = true; sfx('coin1', 0.5); this.puff(o.x, o.y, 12); }
         else if (o.t === 'EndFlag' && polyOverlap(P, o.poly)) return this.win();
         else if (o.t === 'ButtonTrigger' && !o.pressed && polyOverlap(P, o.poly)) { o.pressed = true; L.trigger(o.id); sfx('Button', 0.5); }
+      }
+      // move triggers: fire when the player passes them (or touches them, if touch-triggered)
+      for (const t of L.moveTriggers) {
+        if (t.fired) continue;
+        if (t.touch ? polyOverlap(P, t.poly) : p.x >= t.x) L.fireMove(t);
       }
       // portals
       p.portalCd = Math.max(0, p.portalCd - dt);

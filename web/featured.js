@@ -50,4 +50,19 @@ window.OVO_FEATURED = [
       ['EndFlag', 1860, 1101, 97, 199, 0],
     ],
   },
+  {
+    v: 1, id: 'feat-4', name: 'Moving Parts', author: 'Pester',
+    objs: [
+      ['Solid', 0, 480, 600, 160, 0], ['Collider', 112, 448, 32, 64, 0],
+      ['Text', 40, 300, 360, 40, 0, { tx: 'Move triggers: platforms rise, doors open', sc: 1, al: 50 }],
+      ['MoveTrigger', 344, 420, 32, 32, 0, { tg: 1, mx: 0, my: -112, dur: 0.6, ease: 'out', touch: 0 }],
+      ['Solid', 600, 592, 280, 16, 0, { g: 1 }],
+      ['Spike', 656, 624, 32, 32, 0], ['Spike', 720, 624, 32, 32, 0], ['Spike', 784, 624, 32, 32, 0], ['Solid', 600, 640, 300, 32, 0],
+      ['Solid', 880, 480, 900, 160, 0],
+      ['MoveTrigger', 1060, 420, 32, 32, 0, { tg: 2, mx: 0, my: -224, dur: 0.5, ease: 'inout', touch: 0 }],
+      ['Solid', 1280, 256, 32, 224, 0, { g: 2 }],
+      ['Coin', 1450, 400, 64, 64, 0],
+      ['EndFlag', 1680, 381, 97, 199, 0],
+    ],
+  },
 ];
