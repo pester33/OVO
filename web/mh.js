@@ -136,5 +136,11 @@
   })();
   setInterval(sync, 400);
 
-  window.OvOMH = { init() { build(); sync(); }, settings: S, open: openMenu, close };
+  function applyPreset(p) {
+    ['noclip', 'infJump', 'practice', 'hitboxes', 'trail', 'info', 'hideHud', 'clickTp', 'safe'].forEach(k => { if (typeof p[k] === 'boolean') S[k] = p[k]; });
+    if (p.speed != null) { S.speedOn = p.speed !== 1; S.speedVal = p.speed; }
+    if (p.zoom != null) { S.zoomOn = p.zoom !== 1; S.zoomVal = p.zoom; }
+    save(); if (root) render(); sync();
+  }
+  window.OvOMH = { init() { build(); sync(); }, settings: S, open: openMenu, close, applyPreset };
 })();

@@ -1,0 +1,38 @@
+{
+  "name": "Mega Hack",
+  "author": "Pester",
+  "version": "1.0",
+  "description": "Mega Hack preset: noclip, hitboxes, info, trail and 1.25x speed, a purple night theme, and a spike gauntlet to try it on.",
+  "physics": { "gravity": 1, "jump": 1.1, "speed": 1.1 },
+  "colors": { "background": "#14112a", "solid": "#7c3aed", "text": "#e8e8f0" },
+  "megahack": {
+    "noclip": true,
+    "hitboxes": true,
+    "info": true,
+    "trail": true,
+    "practice": false,
+    "infJump": false,
+    "speed": 1.25,
+    "zoom": 1,
+    "safe": true
+  },
+  "levels": [
+    {
+      "name": "Noclip Gauntlet",
+      "objs": [
+        ["Solid", 0, 480, 2400, 160, 0],
+        ["Collider", 112, 448, 32, 64, 0],
+        ["Text", 40, 300, 420, 40, 0, { "tx": "Mega Hack mod: run straight through!", "sc": 1, "al": 50 }],
+        ["Spike", 400, 464, 32, 32, 0], ["Spike", 432, 464, 32, 32, 0], ["Spike", 464, 464, 32, 32, 0], ["Spike", 496, 464, 32, 32, 0],
+        ["Spike", 528, 464, 32, 32, 0], ["Spike", 560, 464, 32, 32, 0], ["Spike", 592, 464, 32, 32, 0], ["Spike", 624, 464, 32, 32, 0],
+        ["Spike", 800, 464, 32, 32, 0], ["Spike", 832, 464, 32, 32, 0], ["Spike", 864, 464, 32, 32, 0], ["Spike", 896, 464, 32, 32, 0],
+        ["Spike", 928, 464, 32, 32, 0], ["Spike", 960, 464, 32, 32, 0], ["Spike", 992, 464, 32, 32, 0], ["Spike", 1024, 464, 32, 32, 0],
+        ["Spike", 1200, 464, 32, 32, 0], ["Spike", 1232, 464, 32, 32, 0], ["Spike", 1264, 464, 32, 32, 0], ["Spike", 1296, 464, 32, 32, 0],
+        ["Spike", 1328, 464, 32, 32, 0], ["Spike", 1360, 464, 32, 32, 0], ["Spike", 1392, 464, 32, 32, 0], ["Spike", 1424, 464, 32, 32, 0],
+        ["Spike", 1456, 464, 32, 32, 0], ["Spike", 1488, 464, 32, 32, 0], ["Spike", 1520, 464, 32, 32, 0], ["Spike", 1552, 464, 32, 32, 0],
+        ["Coin", 1380, 380, 64, 64, 0],
+        ["EndFlag", 2200, 381, 97, 199, 0]
+      ]
+    }
+  ]
+}
