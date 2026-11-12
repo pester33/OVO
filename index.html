@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>OvO — Web</title>
+<link rel="icon" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game"></canvas>
+<canvas id="editor" hidden></canvas>
+
+<!-- HUD -->
+<div id="hud" hidden>
+  <div class="hud-left">
+    <button class="icon" id="btnPause" aria-label="Pause">II</button>
+    <button class="icon" id="btnStop" aria-label="Stop playtest" hidden>■</button>
+    <div id="hudLevel">1</div>
+  </div>
+  <div class="hud-right"><span id="hudCoin" hidden>©</span><span id="hudDeaths">0</span><span id="hudTime">0.00</span></div>
+</div>
+
+<!-- touch controls -->
+<div id="touch" hidden>
+  <div class="tpad left">
+    <div class="tbtn" data-k="l">◀</div>
+    <div class="tbtn" data-k="r">▶</div>
+  </div>
+  <div class="tpad right">
+    <div class="tbtn" data-k="d">▼</div>
+    <div class="tbtn big" data-k="u">▲</div>
+  </div>
+</div>
+
+<div id="rotateHint" hidden>↻ Rotate your phone for a bigger view</div>
+
+<!-- screens -->
+<div id="screens">
+  <section id="scrMenu" class="screen">
+    <div id="menuStage">
+      <img class="m-logo" src="assets/ui/logo.png" alt="OvO">
+      <div class="m-best"><div>Best time</div><div id="mBest">00:00.00</div></div>
+      <button class="mbtn" id="mPlay" data-img="Play" style="--x:320px;--y:310px;--w:192px;--h:96px"><span style="font-size:34px">PLAY</span></button>
+      <button class="mbtn" id="mRestart" data-img="Replay" style="--x:283px;--y:410px;--w:128px;--h:64px"><span>RESTART</span></button>
+      <button class="mbtn" id="mSkins" data-img="Skins" style="--x:389px;--y:410px;--w:64px;--h:64px" title="Skins"></button>
+      <button class="mbtn" id="mLevels" data-img="Levels" style="--x:283px;--y:492px;--w:128px;--h:64px"><span>LEVELS</span></button>
+      <button class="mbtn" id="mAch" data-img="Achievements" style="--x:389px;--y:492px;--w:64px;--h:64px" title="Achievements"></button>
+      <button class="mbtn" id="mCredits" data-img="Credits" style="--x:283px;--y:572px;--w:128px;--h:64px"><span>CREDITS</span></button>
+      <button class="mbtn" id="mOptions" data-img="Options" style="--x:389px;--y:572px;--w:64px;--h:64px" title="Options"></button>
+      <div class="m-ver">1.4.4 web</div>
+      <div class="m-lang"><img src="assets/ui/flag_enus.png" alt=""><span>English (US)</span></div>
+      <button class="mbtn" id="mEdit" data-img="Edit" style="--x:23px;--y:293px;--w:40px;--h:45px" title="Custom levels &amp; editor"></button>
+      <div class="m-line" style="--x:97px;--y:317px;--w:188px;--h:5px"></div>
+      <div class="m-tips" id="mTips"></div>
+      <div class="m-line" style="--x:97px;--y:562px;--w:188px;--h:5px"></div>
+      <button class="mbtn" id="mMods" data-img="Credits" style="--x:97px;--y:597px;--w:188px;--h:48px"><span style="font-size:17px">GAME MODS</span></button>
+      <div class="m-line" style="--x:536px;--y:247px;--w:203px;--h:4px"></div>
+      <div class="m-line" style="--x:536px;--y:623px;--w:203px;--h:4px"></div>
+      <div class="m-line" style="--x:436px;--y:435px;--w:4px;--h:380px"></div>
+      <div class="m-line" style="--x:635px;--y:435px;--w:4px;--h:380px"></div>
+      <canvas id="mChar" width="406" height="760"></canvas>
+      <button class="mbtn" id="mCustom" data-img="Credits" style="--x:536px;--y:595px;--w:158px;--h:48px"><span style="font-size:15px">CUSTOM LEVELS</span></button>
+    </div>
+  </section>
+
+  <section id="scrLevels" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Levels</h2><span></span></div>
+    <div id="sections" class="scroll"></div>
+  </section>
+
+  <section id="scrCustom" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Custom levels</h2><span></span></div>
+    <div class="scroll">
+      <div class="row-btns">
+        <button id="btnNewLevel">+ New level</button>
+        <button id="btnImport">Import code</button>
+        <label class="filebtn">Import file<input type="file" id="fileImport" accept=".json,.ovo,application/json" hidden></label>
+      </div>
+      <h3>My levels</h3>
+      <div id="myLevels" class="cards"></div>
+      <h3>Featured</h3>
+      <div id="featuredLevels" class="cards"></div>
+    </div>
+  </section>
+
+  <section id="scrMods" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Game Mods</h2><button id="modsHelp">Instructions</button></div>
+    <div class="scroll">
+      <div class="row-btns">
+        <button id="modsInstall" class="primary">Install from JSON</button>
+        <button id="modsPublish">Publish a mod</button>
+      </div>
+      <h3>Installed</h3>
+      <div id="modsInstalled" class="cards"></div>
+      <h3>Community mods</h3>
+      <div class="row-btns"><input id="modsSearch" placeholder="Search mods" style="flex:1;min-width:140px"><button id="modsRefresh">Search / refresh</button></div>
+      <div id="modsCommunity" class="cards" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <section id="scrOptions" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Options</h2><span></span></div>
+    <div class="scroll opts">
+      <label><input type="checkbox" id="optSfx" checked> Sound effects</label>
+      <label><input type="checkbox" id="optMusic" checked> Music</label>
+      <label><input type="checkbox" id="optHard"> Hard mode (extra spikes)</label>
+      <label>Touch controls
+        <select id="optTouch"><option value="auto">Auto</option><option value="on">Always on</option><option value="off">Off</option></select>
+      </label>
+      <label>Touch button size
+        <input type="range" id="optTouchSize" min="0.7" max="1.5" step="0.05" value="1">
+      </label>
+      <button id="btnFullscreen">Toggle fullscreen</button>
+      <button id="btnResetProgress" class="danger">Reset progress</button>
+    </div>
+  </section>
+
+  <!-- editor UI -->
+  <section id="scrEditor" class="screen editor-ui" hidden>
+    <div class="gd-top">
+      <button id="gdMenu" title="Menu (save, exit, share)">II</button>
+      <button id="gdUndo" title="Undo (Ctrl+Z)">↶</button>
+      <button id="gdRedo" title="Redo (Ctrl+Y)">↷</button>
+      <button id="gdTrash" title="Delete selected (Del)">🗑</button>
+    </div>
+    <div class="gd-right">
+      <button id="gdSwipe" title="Swipe: paint / box-select / delete while dragging (or hold Shift)">Swipe</button>
+      <button id="gdZoomIn" title="Zoom in">＋</button>
+      <button id="gdZoomOut" title="Zoom out">－</button>
+    </div>
+    <button id="gdPlay" class="gd-play" title="Playtest (Enter)">▶</button>
+    <div class="gd-hint" id="gdHint"></div>
+    <div class="gd-panel">
+      <div class="gd-modes">
+        <button class="gd-mode on" data-mode="build">BUILD</button>
+        <button class="gd-mode" data-mode="edit">EDIT</button>
+        <button class="gd-mode" data-mode="delete">DELETE</button>
+      </div>
+      <div class="gd-content">
+        <div class="gd-tabs" id="gdTabs"></div>
+        <div class="gd-gridwrap"><button class="gd-page" id="gdPrev">‹</button><div class="gd-grid" id="gdGrid"></div><button class="gd-page" id="gdNext">›</button></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- dialogs -->
+<div id="dlg" class="dlg" hidden><div class="dlg-box" id="dlgBox"></div></div>
+
+<script src="levels.js"></script>
+<script src="featured.js"></script>
+<script src="rig.js"></script>
+<script src="engine.js"></script>
+<script src="editor.js"></script>
+<script src="mods.js"></script>
+<script src="mh.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
