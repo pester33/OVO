@@ -36,6 +36,7 @@
     $('#hud').hidden = !playing; setTouch(playing);
     if (name === 'levels') renderLevels();
     if (name === 'custom') renderCustom();
+    if (name === 'menu') refreshMenu && refreshMenu();
     if (name) { game.running = false; OvO.playMusic('MenuTrack'); }
     resize();
   }
@@ -286,6 +287,59 @@
 
   // first interaction unlocks audio on mobile
   addEventListener('pointerdown', function unlock() { removeEventListener('pointerdown', unlock); if ($('#hud').hidden) OvO.playMusic('MenuTrack'); }, { once: true });
+
+
+  // ---------- original-style main menu ----------
+  const stage = $('#menuStage');
+  function layoutStage() {
+    const sc = Math.min(innerWidth, innerHeight) / 640;
+    stage.style.transform = `translate(${(innerWidth - 640 * sc) / 2}px, ${(innerHeight - 640 * sc) / 2}px) scale(${sc})`;
+  }
+  addEventListener('resize', layoutStage); layoutStage();
+  stage.querySelectorAll('.mbtn').forEach(b => {
+    const n = b.dataset.img, set = f => b.style.backgroundImage = `url(assets/ui/${n}_00${f}.png)`;
+    set(0);
+    b.addEventListener('pointerenter', () => set(1)); b.addEventListener('pointerleave', () => set(0));
+    b.addEventListener('pointerdown', () => set(2)); b.addEventListener('pointerup', () => set(1));
+  });
+  fetch('assets/ui/tips.json').then(r => r.json()).then(tips => {
+    $('#mTips').innerHTML = tips.map(t => `<div class="m-tip">${esc(t.text)}</div>`).join('');
+  }).catch(() => {});
+  function fmtRun(t) { const m = Math.floor(t / 60), s = t - m * 60; return String(m).padStart(2, '0') + ':' + s.toFixed(2).padStart(5, '0'); }
+  function refreshMenu() {
+    const times = Object.values(progress.done); $('#mBest').textContent = fmtRun(times.reduce((a, b) => a + b, 0));
+  }
+  function firstUndone() { const l = window.OVO_LEVELS.find(l => progress.done[l.n] == null); return l ? l.n : 1; }
+  const click = (id, f) => $(id).addEventListener('click', () => { OvO.sfx('Click', 0.4); f(); });
+  click('#mPlay', () => playMain(firstUndone()));
+  click('#mRestart', () => playMain(1));
+  click('#mLevels', () => show('levels'));
+  click('#mOptions', () => show('options'));
+  click('#mEdit', () => show('custom'));
+  click('#mCustom', () => show('custom'));
+  click('#mSkins', () => toast('Skins aren’t in the web version yet.'));
+  click('#mAch', () => {
+    const done = Object.keys(progress.done).length, coins = Object.keys(progress.coins).length;
+    dialog(`<h2>Progress</h2><div class="stat"><span>${done}/${window.OVO_LEVELS.length} levels</span><span>© ${coins}</span></div>
+      <p>Best total time: ${fmtRun(Object.values(progress.done).reduce((a, b) => a + b, 0))}</p><div class="btns"><button class="primary" data-a="ok">OK</button></div>`, { ok: closeDlg });
+  });
+  click('#mCredits', () => dialog(`<h2>Credits</h2><p>OvO by Dedra Games.</p><p>Web edition with custom levels and mobile controls, built from the open-source project.</p><div class="btns"><button class="primary" data-a="ok">OK</button></div>`, { ok: closeDlg }));
+  // big idle character in the right panel, animated by the original rig code (collider 128x256 = scale 4)
+  const mc = $('#mChar'), mctx = mc.getContext('2d');
+  const RIG = OvO.RIG, menuRig = RIG.makeRig(0, 0); let mTick = 0, mOnce = {};
+  (function menuLoop() {
+    requestAnimationFrame(menuLoop);
+    if ($('#scrMenu').hidden) return;
+    mTick++;
+    for (const n in RIG.RIGDEF) { menuRig[n].mir = 1; }
+    const C = { State: 'idle', Side: 1, Angle: 0, Skin: '', ipx: () => 0, ipy: () => 8, jumped: false, landed: false };
+    window.OvORigAnimate(menuRig, C, 1 / 60, performance.now() / 1000, id => { const r = mOnce[id] !== mTick - 1; mOnce[id] = mTick; return r; }, RIG.rigIpos);
+    mctx.setTransform(1, 0, 0, 1, 0, 0); mctx.clearRect(0, 0, mc.width, mc.height);
+    mctx.imageSmoothingEnabled = false;
+    // canvas is 2x the panel (406x760); collider centre sits at (528,435) in stage coords = (92,188) in the panel
+    mctx.setTransform(8, 0, 0, 8, 92 * 2, 188 * 2);
+    RIG.drawRig(mctx, menuRig, 0, 0, 1);
+  })();
 
   // ---------- boot ----------
   applyOpts(); resize();

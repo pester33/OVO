@@ -114,3 +114,24 @@ h3 { font-weight: normal; margin: 22px 0 10px; border-bottom: 2px dashed #000; p
   .foot { display: none; }
   .topbar { padding: 6px 12px; } .topbar h2 { font-size: 20px; }
 }
+
+/* ---------- original-style main menu (640x640 stage, "scale outer") ---------- */
+#scrMenu { background: #fff; display: block; overflow: hidden; }
+#menuStage { position: absolute; left: 0; top: 0; width: 640px; height: 640px; transform-origin: 0 0; }
+#menuStage > * { position: absolute; }
+.m-logo { left: 105.5px; top: 44.5px; width: 429px; height: 151px; }
+.m-best { left: 170px; top: 196px; width: 300px; text-align: center; font-size: 15px; line-height: 1.25; }
+.m-best #mBest { font-size: 17px; }
+.mbtn { left: calc(var(--x) - var(--w) / 2); top: calc(var(--y) - var(--h) / 2); width: var(--w); height: var(--h); padding: 0; border: 0;
+  background: transparent center / 100% 100% no-repeat; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #000; }
+.mbtn:hover { background-color: transparent; color: #000; }
+.mbtn span { pointer-events: none; letter-spacing: 1px; }
+.m-ver { left: 220px; top: 606px; width: 100px; text-align: center; font-size: 12px; }
+.m-lang { left: 47px; top: 278px; width: 145px; height: 30px; border: 3px solid #000; display: flex; align-items: center; gap: 8px; padding: 0 6px; font-size: 13px; }
+.m-lang img { width: 26px; height: 18px; }
+.m-lang span { font-size: 11px; white-space: nowrap; }
+.m-line { left: calc(var(--x) - var(--w) / 2); top: calc(var(--y) - var(--h) / 2); width: var(--w); height: var(--h); background: #000; }
+.m-tips { left: 3px; top: 322px; width: 196px; height: 298px; overflow-y: auto; padding: 4px 6px 4px 0; touch-action: pan-y; }
+.m-tip { border: 3px solid #000; margin-bottom: 8px; padding: 10px 8px; font-size: 13px; text-align: center; line-height: 1.35; }
+#mChar { left: 436px; top: 247px; width: 203px; height: 380px; position: absolute; image-rendering: pixelated; }
+.foot { display: none; }

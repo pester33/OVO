@@ -262,6 +262,39 @@
     return { nx: bx, ny: by, d: best };
   }
 
+  // ---------- player rig (sprites, pivots and layering from the original project) ----------
+  const RIGDEF = {
+    Head: { iw: 32, ih: 32, hx: 0.5, hy: 1, ip: {} },
+    Body: { iw: 8, ih: 16, hx: 0.5, hy: 0.5, ip: { Head: [0.5, 0], RightA: [1, 0.25], LeftA: [0, 0.25], LeftL: [0, 1], RightL: [0.5, 1] } },
+    LeftArm: { iw: 4, ih: 8, hx: 1, hy: 0, ip: { 1: [1, 1] } }, RightArm: { iw: 4, ih: 8, hx: 1, hy: 0, ip: { 1: [1, 1] } },
+    LeftHand: { iw: 4, ih: 8, hx: 1, hy: 0, ip: {} }, RightHand: { iw: 4, ih: 8, hx: 1, hy: 0, ip: {} },
+    LeftLeg: { iw: 4, ih: 8, hx: 0, hy: 0, ip: { 1: [0, 1] } }, RightLeg: { iw: 4, ih: 8, hx: 0, hy: 0, ip: { 1: [0, 1] } },
+    LeftFoot: { iw: 4, ih: 8, hx: 0, hy: 0, ip: {} }, RightFoot: { iw: 4, ih: 8, hx: 0, hy: 0, ip: {} },
+  };
+  const ZORDER = ['RightArm', 'RightHand', 'Body', 'RightLeg', 'RightFoot', 'LeftLeg', 'LeftFoot', 'Head', 'LeftArm', 'LeftHand'];
+  const RIGIMG = {};
+  Object.keys(RIGDEF).forEach(n => { const i = new Image(); i.src = 'assets/rig/' + n + '.png'; RIGIMG[n] = i; });
+  function makeRig(x, y) { const R = {}; for (const n in RIGDEF) R[n] = { name: n, x, y, a: 0, h: RIGDEF[n].ih, mir: 1, ox: x, oy: y }; R._once = {}; R._tick = 0; return R; }
+  function rigIpos(o, ip) {
+    const d = RIGDEF[o.name], pt = d.ip[ip]; if (!pt) return [o.x, o.y];
+    const lx = (pt[0] - d.hx) * d.iw * o.mir, ly = (pt[1] - d.hy) * o.h;
+    const a = o.a * D2R, c = Math.cos(a), s = Math.sin(a);
+    return [o.x + lx * c - ly * s, o.y + lx * s + ly * c];
+  }
+  // body anchor (collider image point "BodyPos") per collider frame
+  const BODYPOS = { stand: 8, wave: 8, slide: 28, dive0: 28, dive1: 28 };
+  function drawRig(ctx, R, dx, dy, alpha) {
+    for (const n of ZORDER) {
+      const o = R[n], d = RIGDEF[n], im = RIGIMG[n];
+      if (!im.complete || !im.width) continue;
+      ctx.save(); ctx.globalAlpha = alpha == null ? 1 : alpha;
+      ctx.translate(o.x + dx, o.y + dy); ctx.rotate(o.a * D2R); ctx.scale(o.mir, 1);
+      ctx.drawImage(im, -d.hx * d.iw, -d.hy * o.h, d.iw, o.h);
+      ctx.restore();
+    }
+  }
+  function cloneRig(R) { const c = {}; for (const n in RIGDEF) c[n] = Object.assign({}, R[n]); return c; }
+
   class Game {
     constructor(canvas) {
       this.cv = canvas; this.ctx = canvas.getContext('2d');
@@ -297,6 +330,7 @@
         hit: 0, dead: 0, once: {}, jtOff: false, gpOff: false, noTrace: 0, mirrorT: -1, mirrorN: 0, zoneCd: 0, zoneIn: false, portalCd: 0,
         anim: 0, slideId: 0, inv: false,
       };
+      this.p.rig = makeRig(s.x, s.y); this.p.ost = 'idle';
       this.prevPos = { x: s.x, y: s.y };
       if (snapCam) { this.cam.x = s.x; this.cam.y = s.y; }
     }
@@ -551,8 +585,8 @@
           p.cnj++;
           this.wait(0, () => {
             if (p.cnj === 0) sfx('jump', 0.35);
-            else if (p.cnj === 1) { p.dy = -p.jump * 1.05; sfx('Superjump', 0.3); }
-            else if (p.cnj === 2) { p.dy = p.dy * 1.15; p.cnj = -1; p.TripleJump = true; sfx('Superjump', 0.45); }
+            else if (p.cnj === 1) { p.dy = -p.jump * 1.05; p.st2 = 'gpjump'; sfx('Superjump', 0.3); }
+            else if (p.cnj === 2) { p.dy = p.dy * 1.15; p.cnj = -1; p.TripleJump = true; p.st2 = 'triplejump'; sfx('Superjump', 0.45); }
           });
         } else { p.cnj = 0; sfx('jump', 0.35); }
       }
@@ -571,7 +605,10 @@
       this.stepRockets(dt);
       this.stepParticles(dt);
       this.runWaits();
-      if (p.dead) { p.dead -= dt; if (p.dead <= 0) this.reset(false); return; }
+      if (p.dead) {
+        for (const n in RIGDEF) { const o = p.rig[n], sp = Math.hypot(o.vx, o.vy); if (sp > 0) { const ns = Math.max(0, sp - sp * dt / 0.75 / 2 * 2); o.vx *= ns / sp; o.vy *= ns / sp; } o.x += o.vx * dt; o.y += o.vy * dt; }
+        p.dead -= dt; if (p.dead <= 0) this.reset(false); return;
+      }
       if (this.won) return;
       this.time += dt;
       this.readInput();
@@ -579,6 +616,7 @@
       if (p.landed) { p.lastLanded = this.clock; if (!p.Pound) this.puff(p.x, p.y + 30, 3); }
       this.events(dt);
       this.gameplay(dt);
+      if (!p.dead) this.updateRig();
       p.anim += dt;
     }
 
@@ -825,7 +863,7 @@
     }
     explode(x, y) { sfx('Pound', 0.3); for (let i = 0; i < 12; i++) this.particles.push({ x, y, vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400, life: 0.5, c: i % 2 ? '#f80a19' : '#000', s: 5 }); }
     puff(x, y, n, c) { for (let i = 0; i < n; i++) this.particles.push({ x, y, vx: (Math.random() - 0.5) * 160, vy: -Math.random() * 120, life: 0.35 + Math.random() * 0.2, c: c || '#000', s: 3 }); }
-    ghost() { const p = this.p; this.particles.push({ kind: 'ghost', x: p.x, y: p.y, side: p.side, ang: p.ang, frame: p.frame, anim: p.anim, life: 0.35, vx: 0, vy: 0, g: 0, st: this.animState() }); }
+    ghost() { const p = this.p; this.particles.push({ kind: 'ghost', rig: cloneRig(p.rig), x: 0, y: 0, life: 0.35, vx: 0, vy: 0, g: 0 }); }
     stepParticles(dt) {
       for (const q of this.particles) { if (q.drag) { q.vx *= 0.94; q.vy *= 0.94; } q.vy += (q.g == null ? 600 : q.g) * dt; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; if (q.rs) q.r += q.rs * dt; }
       this.particles = this.particles.filter(q => q.life > 0);
@@ -836,13 +874,40 @@
       this.wait(0.1, () => sfx('Transition', 0.3));
       const [gx, gy] = this.down(), [rx, ry] = this.right();
       const vx = rx * p.dx + gx * p.dy, vy = ry * p.dx + gy * p.dy;
-      const parts = [[0, -20, 'head'], [0, 0, 'line'], [-6, 14, 'line'], [6, 14, 'line'], [-8, -4, 'line'], [8, -4, 'line']];
-      for (const [ox, oy, k] of parts) this.particles.push({ x: p.x + ox, y: p.y + oy, vx: vx * 0.9 + (Math.random() - 0.5) * 120, vy: vy * 0.9 + (Math.random() - 0.5) * 120, life: 0.75, c: '#000', s: 4, kind: k, r: 0, rs: (Math.random() - 0.5) * 14, g: 0, drag: true });
+      // original death: every rig part keeps flying with its last movement, slowing down while fading out
+      for (const n in RIGDEF) { const o = p.rig[n]; o.vx = (o.x - o.ox) / TICK; o.vy = (o.y - o.oy) / TICK; }
       if (this.onDeath) this.onDeath();
     }
     win() {
       if (this.won) return; this.won = true;
       if (this.onWin) setTimeout(() => this.onWin({ time: this.time, deaths: this.deaths, coin: this.coinGot }), 500);
+    }
+    ovoState() { // "Player > States" from the original event sheet
+      const p = this.p; const bw = this.byWall(0) || this.byWall(1); let st = p.ost;
+      if (p.floor) {
+        if (bw) st = 'wall'; else if (p.Slipping) st = 'slip'; else if (p.Sliding) st = 'slide';
+        else if (this.moving() && p.Dancing) st = 'dancing'; else if (this.moving() && p.WaveDash) st = 'wavedash';
+        else if (this.moving()) st = 'run'; else st = 'idle';
+      } else if (!(p.dy < 0)) {
+        if (bw) st = 'wallslide'; else if (p.dy > 0) st = 'fall';
+      } else if (st !== 'gpjump' && st !== 'triplejump') st = 'jump';
+      if (p.st2) { st = p.st2; p.st2 = null; }
+      if (p.Pound && !p.floor) st = 'pound';
+      if (p.Pound && p.floor) st = 'poundFloor';
+      if (p.CanWaveDash && !p.floor) st = 'wavedashFall';
+      if (p.Plunge) st = 'plunge';
+      if (p.Stun) st = 'stun';
+      p.ost = st; return st;
+    }
+    updateRig() {
+      const p = this.p, R = p.rig; R._tick++;
+      for (const n in RIGDEF) { R[n].ox = R[n].x; R[n].oy = R[n].y; R[n].mir = p.side < 0 ? -1 : 1; }
+      const ang = ((p.ang % 360) + 360) % 360, a = p.ang * D2R, by = BODYPOS[p.frame] || 8;
+      const bx = p.x - Math.sin(a) * by, byy = p.y + Math.cos(a) * by;
+      const C = { State: this.ovoState(), Side: p.side, Angle: ang, jumped: p.jumped, landed: p.landed, Skin: '', VectorX: p.dx, VectorY: p.dy, Height: 64, X: p.x, Y: p.y,
+        ipx: () => bx, ipy: () => byy };
+      const once = id => { const r = R._once[id] !== R._tick - 1; R._once[id] = R._tick; return r; };
+      if (window.OvORigAnimate) window.OvORigAnimate(R, C, TICK, this.clock, once, rigIpos);
     }
     animState() {
       const p = this.p;
@@ -881,9 +946,9 @@
         this.drawObj(ctx, o);
       }
       for (const r of L.rockets) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.a); ctx.drawImage(IMG.rocket, 0, -8, 32, 16); ctx.restore(); }
-      for (const q of this.particles) if (q.kind === 'ghost') { ctx.globalAlpha = q.life / 0.35 * 0.35; this.drawPlayer(ctx, q, q.x, q.y, q.st); }
+      for (const q of this.particles) if (q.kind === 'ghost' && q.rig) drawRig(ctx, q.rig, 0, 0, q.life / 0.35 * 0.6);
       ctx.globalAlpha = 1;
-      if (!p.dead) this.drawPlayer(ctx, p, px, py, this.animState());
+      if (p.rig) drawRig(ctx, p.rig, p.dead ? 0 : px - p.x, p.dead ? 0 : py - p.y, p.dead ? Math.max(0, p.dead / 0.75) : 1);
       for (const q of this.particles) {
         if (q.kind === 'ghost') continue;
         ctx.globalAlpha = Math.min(1, q.life * 2.5); ctx.fillStyle = q.c; ctx.strokeStyle = q.c;
@@ -907,9 +972,8 @@
           const im = t === 'JumpThrough' ? IMG.jumpthrough : IMG.ujumpthrough;
           ctx.translate(ox, oy); ctx.fillStyle = im.complete && im.width ? ctx.createPattern(im, 'repeat') : '#000'; ctx.fillRect(0, 0, o.w, o.h); break;
         }
-        case 'Spike': case 'Spike2':
-          ctx.fillStyle = t === 'Spike' ? '#000' : '#fff';
-          ctx.beginPath(); ctx.moveTo(ox + o.w * 0.5, oy); ctx.lineTo(ox + o.w, oy + o.h); ctx.lineTo(ox, oy + o.h); ctx.closePath(); ctx.fill(); break;
+        case 'Spike': ctx.drawImage(IMG.spike, ox, oy, o.w, o.h); break;
+        case 'Spike2': ctx.drawImage(IMG.spike2, ox, oy, o.w, o.h); break;
         case 'JumpBoost': ctx.drawImage(IMG.boost, ox, oy, o.w, o.h); break;
         case 'Coin': ctx.drawImage(IMG.coin, ox, oy, o.w, o.h); break;
         case 'EndFlag': ctx.drawImage(IMG.flag, ox, oy, o.w, o.h); break;
@@ -993,4 +1057,6 @@
   }
 
   window.OvO = { Game, Level, makeObj, updatePoly, IMG, sfx, playMusic, setAudio(s, m) { sfxOn = s; musicOn = m; if (!m && music) { music.pause(); } else if (m && musicName) { const n = musicName; musicName = ''; playMusic(n); } }, P, SOLID, JT, SPIKE, rot, wrapText };
+  window.OvO.RIG = { makeRig, drawRig, rigIpos, RIGDEF, BODYPOS };
 })();
+

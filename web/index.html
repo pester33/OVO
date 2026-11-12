@@ -43,14 +43,29 @@
 <!-- screens -->
 <div id="screens">
   <section id="scrMenu" class="screen">
-    <div class="title">OvO</div>
-    <div class="subtitle">web edition</div>
-    <div class="menu-btns">
-      <button data-go="levels">Play</button>
-      <button data-go="custom">Custom levels</button>
-      <button data-go="options">Options</button>
+    <div id="menuStage">
+      <img class="m-logo" src="assets/ui/logo.png" alt="OvO">
+      <div class="m-best"><div>Best time</div><div id="mBest">00:00.00</div></div>
+      <button class="mbtn" id="mPlay" data-img="Play" style="--x:320px;--y:310px;--w:192px;--h:96px"><span style="font-size:34px">PLAY</span></button>
+      <button class="mbtn" id="mRestart" data-img="Replay" style="--x:283px;--y:410px;--w:128px;--h:64px"><span>RESTART</span></button>
+      <button class="mbtn" id="mSkins" data-img="Skins" style="--x:389px;--y:410px;--w:64px;--h:64px" title="Skins"></button>
+      <button class="mbtn" id="mLevels" data-img="Levels" style="--x:283px;--y:492px;--w:128px;--h:64px"><span>LEVELS</span></button>
+      <button class="mbtn" id="mAch" data-img="Achievements" style="--x:389px;--y:492px;--w:64px;--h:64px" title="Achievements"></button>
+      <button class="mbtn" id="mCredits" data-img="Credits" style="--x:283px;--y:572px;--w:128px;--h:64px"><span>CREDITS</span></button>
+      <button class="mbtn" id="mOptions" data-img="Options" style="--x:389px;--y:572px;--w:64px;--h:64px" title="Options"></button>
+      <div class="m-ver">1.4.4 web</div>
+      <div class="m-lang"><img src="assets/ui/flag_enus.png" alt=""><span>English (US)</span></div>
+      <button class="mbtn" id="mEdit" data-img="Edit" style="--x:23px;--y:293px;--w:40px;--h:45px" title="Custom levels &amp; editor"></button>
+      <div class="m-line" style="--x:97px;--y:317px;--w:188px;--h:5px"></div>
+      <div class="m-tips" id="mTips"></div>
+      <div class="m-line" style="--x:97px;--y:622px;--w:188px;--h:5px"></div>
+      <div class="m-line" style="--x:536px;--y:247px;--w:203px;--h:4px"></div>
+      <div class="m-line" style="--x:536px;--y:623px;--w:203px;--h:4px"></div>
+      <div class="m-line" style="--x:436px;--y:435px;--w:4px;--h:380px"></div>
+      <div class="m-line" style="--x:635px;--y:435px;--w:4px;--h:380px"></div>
+      <canvas id="mChar" width="406" height="760"></canvas>
+      <button class="mbtn" id="mCustom" data-img="Credits" style="--x:536px;--y:595px;--w:158px;--h:48px"><span style="font-size:15px">CUSTOM LEVELS</span></button>
     </div>
-    <div class="foot">Arrows / WASD to move · Up / Space to jump · Down to slide, dive &amp; pound · R to restart</div>
   </section>
 
   <section id="scrLevels" class="screen" hidden>
@@ -111,6 +126,7 @@
 
 <script src="levels.js"></script>
 <script src="featured.js"></script>
+<script src="rig.js"></script>
 <script src="engine.js"></script>
 <script src="editor.js"></script>
 <script src="app.js"></script>

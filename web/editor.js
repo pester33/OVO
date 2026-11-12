@@ -77,11 +77,14 @@
       if (o.t === 'Portal' && opts && opts.labels) { ctx.fillStyle = '#000'; ctx.font = '12px Retron, monospace'; ctx.textAlign = 'center'; ctx.fillText(String(o.id), o.x, o.y - 40); }
     }
   }
-  function drawStart(ctx, o) {
-    ctx.save(); ctx.translate(o.x, o.y + 32); ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, -46, 9, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(0, -36); ctx.lineTo(0, -22); ctx.lineTo(-8, 0); ctx.moveTo(0, -22); ctx.lineTo(8, 0); ctx.moveTo(-9, -24); ctx.lineTo(0, -32); ctx.lineTo(9, -24); ctx.stroke();
-    ctx.restore();
+  let idleRig = null;
+  function drawStart(ctx, o) { // the real character in its idle pose
+    const RIG = OvO.RIG;
+    if (!idleRig) {
+      idleRig = RIG.makeRig(0, 0); const once = {}; let tk = 0;
+      for (let i = 0; i < 90; i++) { tk++; window.OvORigAnimate(idleRig, { State: 'idle', Side: 1, Angle: 0, Skin: '', ipx: () => 0, ipy: () => 8 }, 1 / 60, i / 60, id => { const r = once[id] !== tk - 1; once[id] = tk; return r; }, RIG.rigIpos); }
+    }
+    RIG.drawRig(ctx, idleRig, o.x, o.y, ctx.globalAlpha);
   }
   function thumb(cv, data) {
     const def = toDef(data); const r = cv.getBoundingClientRect();
