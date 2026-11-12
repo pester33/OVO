@@ -206,3 +206,39 @@ h3 { font-weight: normal; margin: 22px 0 10px; border-bottom: 2px dashed #000; p
 #modIn, #modEx, #modJson { height: 180px; font-family: monospace; font-size: 12px; }
 #modsSearch { touch-action: auto; user-select: text; -webkit-user-select: text; }
 #scrMods .topbar button:last-child { padding: 8px 12px; font-size: 14px; }
+
+/* ---------- Mega Hack menu ---------- */
+#mh { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.25); font-family: Retron, monospace; }
+.mh-head { position: absolute; left: 0; right: 0; top: 0; height: 44px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+  background: rgba(14,16,24,.92); color: #fff; font-size: 18px; letter-spacing: 2px; padding-top: env(safe-area-inset-top); }
+.mh-head span { font-size: 11px; opacity: .6; letter-spacing: 0; }
+.mh-head button { margin-left: auto; background: transparent; color: #fff; border: 2px solid #fff; width: 34px; height: 34px; padding: 0; font-size: 20px; }
+.mh-win { position: absolute; width: 214px; background: rgba(20,22,32,.94); color: #e8e8f0; border: 1px solid #3a3f55; box-shadow: 0 6px 18px rgba(0,0,0,.4); font-size: 13px; }
+.mh-title { background: linear-gradient(90deg, #7c3aed, #2563eb); color: #fff; padding: 6px 10px; cursor: move; touch-action: none; font-size: 14px; letter-spacing: 1px; }
+.mh-body { padding: 6px 8px 8px; display: flex; flex-direction: column; gap: 4px; }
+.mh-row label { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 3px 0; }
+.mh-row input[type=checkbox] { width: 18px; height: 18px; accent-color: #7c3aed; }
+.mh-row button { width: 100%; background: #2b2f42; color: #e8e8f0; border: 1px solid #4a5070; padding: 6px; font-size: 12px; }
+.mh-row button:hover { background: #7c3aed; color: #fff; }
+.mh-row small { opacity: .55; font-size: 11px; }
+.mh-slider { display: flex; align-items: center; gap: 6px; padding-left: 26px; }
+.mh-slider input { flex: 1; accent-color: #7c3aed; touch-action: pan-x; }
+.mh-slider b { font-weight: normal; min-width: 44px; text-align: right; font-size: 12px; }
+#mhBtn { font-size: 12px; letter-spacing: 0; }
+.mh-ind { color: #f80a19; font-size: 18px; }
+#mhCp { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; gap: 8px; z-index: 5; }
+#mhCp button { background: rgba(0,192,64,.85); color: #fff; border: 2px solid #007a28; padding: 8px 12px; font-size: 14px; }
+#mhInfo { position: fixed; left: calc(10px + env(safe-area-inset-left)); top: calc(60px + env(safe-area-inset-top)); margin: 0; background: rgba(0,0,0,.6); color: #fff;
+  font-family: Retron, monospace; font-size: 12px; padding: 6px 8px; pointer-events: none; z-index: 4; line-height: 1.35; }
+#mhInfo:empty { display: none; }
+#mhFlash { position: fixed; left: 50%; top: 30%; transform: translate(-50%, -50%); background: rgba(0,192,64,.9); color: #fff; padding: 8px 16px; font-size: 16px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 31; }
+#mhFlash.on { opacity: 1; }
+body.mh-hidehud #hud .hud-right, body.mh-hidehud #hudLevel { visibility: hidden; }
+.mh-slider input { flex: none; width: 112px; }
+@media (max-height: 520px), (max-width: 720px) {
+  #mh { overflow-y: auto; padding: calc(52px + env(safe-area-inset-top)) 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start; touch-action: pan-y; }
+  .mh-head { position: fixed; z-index: 2; }
+  .mh-win { position: static !important; width: 200px; }
+  .mh-title { cursor: default; }
+}

@@ -81,18 +81,21 @@
 
   game.onWin = res => {
     if (current && current.fromEditor) return stopPlaytest('Level complete! ' + res.time.toFixed(2) + 's · ' + res.deaths + ' deaths');
+    const blocked = res.cheated && window.OvOHack && OvOHack.safe;
     let best = false;
+    if (!blocked) {
     if (current.kind === 'main') {
       const prev = progress.done[current.n]; if (prev == null || res.time < prev) { progress.done[current.n] = res.time; best = prev != null; }
       if (res.coin) progress.coins[current.n] = true; LS.set('ovo_progress', progress);
     } else if (current.data.id) {
       const prev = progress.custom[current.data.id]; if (!current.fromEditor && (prev == null || res.time < prev)) { progress.custom[current.data.id] = res.time; LS.set('ovo_progress', progress); }
     }
+    }
     setTouch(false);
     const hasNext = current.kind === 'main' && window.OVO_LEVELS.some(l => l.n === current.n + 1);
     dialog(`<h2>Level complete!</h2>
       <div class="stat"><span>⏱ ${res.time.toFixed(2)}</span><span>✕ ${res.deaths}</span><span>${res.coin ? '© got' : '© —'}</span></div>
-      ${best ? '<p>New best time!</p>' : ''}
+      ${best ? '<p>New best time!</p>' : ''}${blocked ? '<p style="color:#f80a19">Mega Hack cheats were used — safe mode didn’t save this run.</p>' : ''}
       <div class="btns">
         ${current.fromEditor ? '<button class="primary" data-a="edit">Back to editor</button>' : ''}
         ${hasNext ? '<button class="primary" data-a="next">Next level ›</button>' : ''}
@@ -262,9 +265,9 @@
   // ---------- keyboard ----------
   const KEYS = { ArrowLeft: 'l', a: 'l', A: 'l', ArrowRight: 'r', d: 'r', D: 'r', ArrowUp: 'u', w: 'u', W: 'u', ' ': 'u', z: 'u', Z: 'u', ArrowDown: 'd', s: 'd', S: 'd' };
   addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if ((e.target.tagName === 'INPUT' && !/^(checkbox|range)$/.test(e.target.type)) || e.target.tagName === 'TEXTAREA') return;
     if (!$('#hud').hidden) {
-      const k = KEYS[e.key]; if (k) { if (!e.repeat) game.key(k, 1); e.preventDefault(); }
+      const k = (window.OvOHack && OvOHack.practice && (e.key === 'z' || e.key === 'Z')) ? null : KEYS[e.key]; if (k) { if (!e.repeat) game.key(k, 1); e.preventDefault(); }
       if ((e.key === 'r' || e.key === 'R') && !game.won && $('#dlg').hidden) game.restart();
       if (e.key === 'Escape' && current && current.fromEditor && $('#dlg').hidden) { stopPlaytest(); return; }
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') { if ($('#dlg').hidden) pause(); else if (dlgCancel) { const f = dlgCancel; closeDlg(); f(); } }
@@ -382,6 +385,7 @@
   })();
 
   window.OvOMods.init({ dialog, closeDlg, toast });
+  window.OvOMH.init();
 
   // ---------- boot ----------
   applyOpts(); resize();

@@ -18,6 +18,9 @@
   const MOD = { gravity: 1, jump: 1, speed: 1, colors: {} };
   function setMods(m) { MOD.gravity = m.gravity || 1; MOD.jump = m.jump || 1; MOD.speed = m.speed || 1; MOD.colors = m.colors || {}; }
 
+  // ---------- Mega Hack hooks (settings live in mh.js) ----------
+  const HK = () => window.OvOHack || {};
+
   // ---------- assets ----------
   const IMG = {};
   ['spike', 'spike2', 'boost', 'coin', 'flag', 'launcher', 'rocket', 'button', 'button_on', 'jumpthrough', 'gpsolid', 'ujumpthrough', 'portal']
@@ -343,6 +346,7 @@
     restart() { if (!this.def) return; this.deaths = 0; this.won = false; this.reset(true); }
     reset(snapCam) {
       this.level = new Level(this.def, { hard: this.hard });
+      if (snapCam) { this.cheated = false; this.checkpoints = []; } this.ncHits = 0; this.ticks = 0;
       this.time = 0; this.coinGot = false; this.clock = 0; this.waits = []; this.buf = []; this.bufT = 0;
       this.particles = [];
       const s = this.level.start;
@@ -357,6 +361,7 @@
         anim: 0, slideId: 0, inv: false,
       };
       this.p.rig = makeRig(s.x, s.y); this.p.ost = 'idle';
+      if (!snapCam && HK().practice && this.checkpoints && this.checkpoints.length) this.loadCheckpoint();
       this.prevPos = { x: s.x, y: s.y };
       if (snapCam) { this.cam.x = s.x; this.cam.y = s.y; }
     }
@@ -374,9 +379,9 @@
       requestAnimationFrame(this.loop);
       const dt = Math.min(0.1, (ts - (this.last || ts)) / 1000); this.last = ts;
       if (this.running && !this.paused && this.level) {
-        this.acc += dt; let n = 0;
-        while (this.acc >= TICK && n < 6) { this.prevPos = { x: this.p.x, y: this.p.y }; this.tick(); this.acc -= TICK; n++; }
-        if (n >= 6) this.acc = 0;
+        const hk = HK(); this.acc += dt * (hk.speed || 1); if ((hk.speed || 1) !== 1) this.cheated = true; let n = 0;
+        while (this.acc >= TICK && n < 12) { this.prevPos = { x: this.p.x, y: this.p.y }; this.tick(); this.acc -= TICK; n++; }
+        if (n >= 12) this.acc = 0;
       }
       this.render(dt);
     }
@@ -588,6 +593,7 @@
     }
     ctlJump() {
       const p = this.p; if (p.dead) return;
+      if (HK().infJump && !p.floor && !(this.byWall(0) || this.byWall(1))) { this.cheated = true; p.dy = -p.jump; p.Pound = false; p.Plunge = false; p.Stun = false; this.clearBuf(); sfx('jump', 0.3); return; }
       // wall jump
       if (!p.floor && !p.Pound && !p.Stun && (this.byWall(0) || this.byWall(1))) {
         const bl = this.byWall(0), br = this.byWall(1);
@@ -637,9 +643,10 @@
         p.dead -= dt; if (p.dead <= 0) this.reset(false); return;
       }
       if (this.won) return;
-      this.time += dt;
+      this.time += dt; this.ticks++;
       this.readInput();
       this.platformTick(dt);
+      if (HK().trail) { this.mhTrail = this.mhTrail || []; if (this.ticks % 3 === 0) { this.mhTrail.push([Math.round(p.x), Math.round(p.y + 24)]); if (this.mhTrail.length > 3000) this.mhTrail.shift(); } }
       if (this.trail && (this.trail.n = (this.trail.n || 0) + 1) % 3 === 0 && this.trail.length < 20000) this.trail.push([Math.round(p.x), Math.round(p.y + 24)]);
       if (p.landed) { p.lastLanded = this.clock; if (!p.Pound) this.puff(p.x, p.y + 30, 3); }
       this.events(dt);
@@ -800,7 +807,7 @@
       if (touching) { p.hit += dt * 60; if (p.hit >= 2) return this.die(); } else p.hit = 0;
       // outside layout
       const P = this.poly(p.x, p.y); const xs = P.map(v => v[0]), ys = P.map(v => v[1]);
-      if (Math.max(...xs) < 0 || Math.min(...xs) > L.w || Math.max(...ys) < 0 || Math.min(...ys) > L.h) return this.die();
+      if (Math.max(...xs) < 0 || Math.min(...xs) > L.w || Math.max(...ys) < 0 || Math.min(...ys) > L.h) { if (HK().noclip) { const nc = window.OvOHack.noclip; window.OvOHack.noclip = false; this.die(); window.OvOHack.noclip = nc; return; } return this.die(); }
       // jump boosts (on collision)
       p.boosts = p.boosts || new Set();
       const now = new Set();
@@ -903,6 +910,7 @@
     }
     die() {
       const p = this.p; if (p.dead || this.won) return;
+      if (HK().noclip) { this.cheated = true; if (!this._ncHitTick || this.clock - this._ncHitTick > 0.05) this.ncHits = (this.ncHits || 0) + 1; this._ncHitTick = this.clock; return; }
       p.dead = 0.75; this.deaths++; sfx('Death', 0.5); sfx('Pound', 0.35); this.shake = 0.2;
       this.wait(0.1, () => sfx('Transition', 0.3));
       const [gx, gy] = this.down(), [rx, ry] = this.right();
@@ -913,7 +921,7 @@
     }
     win() {
       if (this.won) return; this.won = true;
-      if (this.onWin) setTimeout(() => this.onWin({ time: this.time, deaths: this.deaths, coin: this.coinGot }), 500);
+      if (this.onWin) setTimeout(() => this.onWin({ time: this.time, deaths: this.deaths, coin: this.coinGot, cheated: !!this.cheated, acc: this.ticks ? 100 - Math.min(100, (this.ncHits || 0) / Math.max(1, this.ticks / 60) * 10) : 100 }), 500);
     }
     ovoState() { // "Player > States" from the original event sheet
       const p = this.p; const bw = this.byWall(0) || this.byWall(1); let st = p.ost;
@@ -961,12 +969,13 @@
       if (!this.level) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); return; }
       const L = this.level, p = this.p;
       // "Scale outer" with a 640x640 base, like the original project
-      const s = Math.min(W, H) / 640; const vw = W / s, vh = H / s;
+      const s = Math.min(W, H) / 640 * (HK().zoom || 1); const vw = W / s, vh = H / s;
       const al = Math.min(1, this.acc / TICK);
       const px = this.prevPos.x + (p.x - this.prevPos.x) * al, py = this.prevPos.y + (p.y - this.prevPos.y) * al;
       if (!p.dead) { const k = 1 - Math.pow(0.5, dt * 60); this.cam.x += (px - this.cam.x) * k; this.cam.y += (py - this.cam.y) * k; }
       let cx = this.cam.x, cy = this.cam.y;
       // original levels use unbounded scrolling: the camera just follows the player
+      this.view = { cx, cy, s, W, H };
       if (this.shake > 0) { this.shake -= dt; cx += (Math.random() - 0.5) * 8; cy += (Math.random() - 0.5) * 8; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = MOD.colors.background || L.bg; ctx.fillRect(0, 0, W, H);
@@ -979,6 +988,9 @@
         this.drawObj(ctx, o);
       }
       for (const r of L.rockets) { ctx.save(); ctx.translate(r.x, r.y); ctx.rotate(r.a); ctx.drawImage(IMG.rocket, 0, -8, 32, 16); ctx.restore(); }
+      const hk = HK();
+      if (hk.trail && this.mhTrail) { ctx.fillStyle = 'rgba(0,150,255,0.5)'; for (const q of this.mhTrail) ctx.fillRect(q[0] - 2, q[1] - 2, 4, 4); }
+      if (hk.practice && this.checkpoints) for (const c of this.checkpoints) { ctx.save(); ctx.translate(c.x, c.y + 32); ctx.fillStyle = '#00c040'; ctx.beginPath(); ctx.moveTo(0, -40); ctx.lineTo(10, -20); ctx.lineTo(0, 0); ctx.lineTo(-10, -20); ctx.closePath(); ctx.globalAlpha = 0.7; ctx.fill(); ctx.restore(); }
       for (const q of this.particles) if (q.kind === 'ghost' && q.rig) drawRig(ctx, q.rig, 0, 0, q.life / 0.35 * 0.6);
       ctx.globalAlpha = 1;
       if (p.rig) drawRig(ctx, p.rig, p.dead ? 0 : px - p.x, p.dead ? 0 : py - p.y, p.dead ? Math.max(0, p.dead / 0.75) : 1);
@@ -990,7 +1002,36 @@
         else ctx.fillRect(q.x - q.s / 2, q.y - q.s / 2, q.s, q.s);
       }
       ctx.globalAlpha = 1;
+      if (hk.hitboxes) this.drawHitboxes(ctx, vx0, vy0, vx1, vy1, s);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    drawHitboxes(ctx, x0, y0, x1, y1, s) {
+      const L = this.level, p = this.p;
+      const path = pts => { ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); };
+      ctx.lineWidth = 1.5 / s * Math.min(2, devicePixelRatio || 1);
+      for (const o of L.objs) {
+        if (o.gone || !o.poly || !bbHit(o.bb, x0, y0, x1, y1)) continue;
+        let c = null;
+        if (SOLID.has(o.t)) c = o.t === 'GroundPoundSolid' ? '#ff8800' : '#2a7cff';
+        else if (JT.has(o.t)) c = '#00c8ff';
+        else if (SPIKE.has(o.t)) c = '#ff2020';
+        else if (['JumpBoost', 'Portal', 'Coin', 'EndFlag', 'ButtonTrigger', 'MoveTrigger'].includes(o.t)) c = '#ffd000';
+        else if (o.t === 'Tiledbackground') c = '#c040ff';
+        if (!c) continue;
+        ctx.strokeStyle = c; ctx.fillStyle = c + '22'; path(o.poly); ctx.fill(); ctx.stroke();
+      }
+      for (const r of L.rockets) if (r.poly) { ctx.strokeStyle = '#ff2020'; path(r.poly); ctx.stroke(); }
+      if (!p.dead) { ctx.strokeStyle = '#00e050'; ctx.fillStyle = '#00e05033'; path(this.poly(p.x, p.y)); ctx.fill(); ctx.stroke(); }
+    }
+    saveCheckpoint() {
+      const p = this.p; if (p.dead) return false;
+      const keep = ['x', 'y', 'dx', 'dy', 'G', 'ang', 'side', 'maxSpeed', 'dec', 'maxFall', 'inv'];
+      const c = {}; keep.forEach(k => c[k] = p[k]); c.time = this.time; this.checkpoints.push(c); return true;
+    }
+    loadCheckpoint() {
+      const c = this.checkpoints[this.checkpoints.length - 1]; if (!c) return;
+      Object.assign(this.p, c); this.time = c.time; this.p.Pound = false; this.p.ang = c.ang; this.p.rig = makeRig(c.x, c.y);
+      this.prevPos = { x: c.x, y: c.y };
     }
     drawObj(ctx, o) {
       const t = o.t;
