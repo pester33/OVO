@@ -14,6 +14,10 @@
   const JT = new Set(['JumpThrough', 'UnmovableJumpThrough']);
   const SPIKE = new Set(['Spike', 'Spike2']);
 
+  // ---------- mods (data-only: physics multipliers + colours) ----------
+  const MOD = { gravity: 1, jump: 1, speed: 1, colors: {} };
+  function setMods(m) { MOD.gravity = m.gravity || 1; MOD.jump = m.jump || 1; MOD.speed = m.speed || 1; MOD.colors = m.colors || {}; }
+
   // ---------- assets ----------
   const IMG = {};
   ['spike', 'spike2', 'boost', 'coin', 'flag', 'launcher', 'rocket', 'button', 'button_on', 'jumpthrough', 'gpsolid', 'ujumpthrough', 'portal']
@@ -344,7 +348,7 @@
       const s = this.level.start;
       this.p = {
         x: s.x, y: s.y, dx: 0, dy: 0, G: 90, ang: 0, side: 1,
-        maxSpeed: 330, acc: 1500, dec: 1500, jump: 650, grav: 1500, maxFall: 1000, ignoring: false, jumpCtrl: false,
+        maxSpeed: 330, acc: 1500, dec: 1500, jump: 650 * MOD.jump, grav: 1500 * MOD.gravity, maxFall: 1000, ignoring: false, jumpCtrl: false,
         floor: false, wasFloor: false, floorObj: null, jumped: false, landed: false, lastLanded: -1,
         frame: 'stand', diveT: 0,
         Walljump: false, CanSlide: true, Sliding: false, Plunge: false, Pound: true, Stun: false, LongJump: false, Falling: false,
@@ -501,7 +505,7 @@
 
       // horizontal move (in sub-steps to avoid tunnelling)
       if (p.dx !== 0) {
-        const total = p.dx * dt, steps = Math.max(1, Math.ceil(Math.abs(total) / 6));
+        const total = p.dx * dt * MOD.speed, steps = Math.max(1, Math.ceil(Math.abs(total) / 6));
         for (let i = 0; i < steps; i++) {
           const ox = p.x, oy = p.y, mv = total / steps;
           p.x += rx * mv; p.y += ry * mv;
@@ -965,7 +969,7 @@
       // original levels use unbounded scrolling: the camera just follows the player
       if (this.shake > 0) { this.shake -= dt; cx += (Math.random() - 0.5) * 8; cy += (Math.random() - 0.5) * 8; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.fillStyle = L.bg; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = MOD.colors.background || L.bg; ctx.fillRect(0, 0, W, H);
       ctx.setTransform(s, 0, 0, s, Math.round(W / 2 - cx * s), Math.round(H / 2 - cy * s));
       ctx.imageSmoothingEnabled = true;
       const vx0 = cx - vw / 2 - 64, vy0 = cy - vh / 2 - 64, vx1 = cx + vw / 2 + 64, vy1 = cy + vh / 2 + 64;
@@ -993,7 +997,7 @@
       ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(o.a);
       const ox = -o.hx * o.w, oy = -o.hy * o.h;
       switch (t) {
-        case 'Solid': case 'UnmovableSolid': ctx.fillStyle = '#000'; ctx.fillRect(ox - 0.3, oy - 0.3, o.w + 0.6, o.h + 0.6); break;
+        case 'Solid': case 'UnmovableSolid': ctx.fillStyle = MOD.colors.solid || '#000'; ctx.fillRect(ox - 0.3, oy - 0.3, o.w + 0.6, o.h + 0.6); break;
         case 'Solid2': ctx.fillStyle = '#fff'; ctx.fillRect(ox - 0.3, oy - 0.3, o.w + 0.6, o.h + 0.6); break;
         case 'SolidMove': ctx.fillStyle = '#ff0000'; ctx.fillRect(ox, oy, o.w, o.h); break;
         case 'GroundPoundSolid': ctx.fillStyle = IMG.gpsolid.complete && IMG.gpsolid.width ? ctx.createPattern(IMG.gpsolid, 'repeat') : '#f80a19'; ctx.translate(ox, oy); ctx.fillRect(0, 0, o.w, o.h); break;
@@ -1012,7 +1016,7 @@
         case 'Tiledbackground': ctx.fillStyle = 'rgba(242,12,25,0.08)'; ctx.fillRect(ox, oy, o.w, o.h); break;
         case 'SpriteFontDeluxe': case 'SpriteFontDeluxeW': case 'Text': {
           const sc = o.sc || 1, fs = 15 * sc;
-          ctx.fillStyle = t === 'SpriteFontDeluxeW' ? '#fff' : (o.col || '#000'); ctx.font = fs + 'px Retron, monospace'; ctx.textBaseline = 'top';
+          ctx.fillStyle = t === 'SpriteFontDeluxeW' ? '#fff' : (o.col || MOD.colors.text || '#000'); ctx.font = fs + 'px Retron, monospace'; ctx.textBaseline = 'top';
           const al = o.al == null ? 50 : o.al; ctx.textAlign = al < 25 ? 'left' : al > 75 ? 'right' : 'center';
           const x = al < 25 ? ox : al > 75 ? ox + o.w : ox + o.w / 2;
           wrapText(ctx, o.tx || '', x, oy, o.w, fs * 1.25);
@@ -1086,6 +1090,7 @@
   }
 
   window.OvO = { Game, Level, makeObj, updatePoly, IMG, sfx, playMusic, setAudio(s, m) { sfxOn = s; musicOn = m; if (!m && music) { music.pause(); } else if (m && musicName) { const n = musicName; musicName = ''; playMusic(n); } }, P, SOLID, JT, SPIKE, rot, wrapText };
+  window.OvO.setMods = setMods; window.OvO.MOD = MOD;
   window.OvO.RIG = { makeRig, drawRig, rigIpos, RIGDEF, BODYPOS };
 })();
 

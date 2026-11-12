@@ -28,7 +28,7 @@
   addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 200));
 
   // ---------- screens ----------
-  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions' };
+  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions', mods: '#scrMods' };
   function show(name) {
     for (const k in screens) $(screens[k]).hidden = k !== name;
     $('#scrEditor').hidden = true;
@@ -36,6 +36,7 @@
     $('#hud').hidden = !playing; setTouch(playing);
     if (name === 'levels') renderLevels();
     if (name === 'custom') renderCustom();
+    if (name === 'mods') window.OvOMods.open();
     if (name === 'menu') refreshMenu && refreshMenu();
     if (name) { game.running = false; OvO.playMusic('MenuTrack'); }
     resize();
@@ -164,6 +165,9 @@
     const my = $('#myLevels'); my.innerHTML = '';
     if (!mine.length) my.innerHTML = '<div class="empty">No levels yet — tap “+ New level” to build one.</div>';
     mine.forEach(d => my.appendChild(card(d, true)));
+    const ml = window.OvOMods.modLevels(); let mbox = $('#modLevels');
+    if (!mbox) { $('#featuredLevels').insertAdjacentHTML('afterend', '<h3 id="modLevelsH">From your mods</h3><div id="modLevels" class="cards"></div>'); mbox = $('#modLevels'); }
+    mbox.innerHTML = ''; $('#modLevelsH').hidden = !ml.length; ml.forEach(d => mbox.appendChild(card(d, false)));
     const f = $('#featuredLevels'); f.innerHTML = '';
     (window.OVO_FEATURED || []).forEach(d => f.appendChild(card(d, false)));
   }
@@ -352,6 +356,7 @@
   click('#mOptions', () => show('options'));
   click('#mEdit', () => show('custom'));
   click('#mCustom', () => show('custom'));
+  click('#mMods', () => show('mods'));
   click('#mSkins', () => toast('Skins aren’t in the web version yet.'));
   click('#mAch', () => {
     const done = Object.keys(progress.done).length, coins = Object.keys(progress.coins).length;
@@ -375,6 +380,8 @@
     mctx.setTransform(8, 0, 0, 8, 92 * 2, 188 * 2);
     RIG.drawRig(mctx, menuRig, 0, 0, 1);
   })();
+
+  window.OvOMods.init({ dialog, closeDlg, toast });
 
   // ---------- boot ----------
   applyOpts(); resize();

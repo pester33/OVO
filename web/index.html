@@ -59,7 +59,8 @@
       <button class="mbtn" id="mEdit" data-img="Edit" style="--x:23px;--y:293px;--w:40px;--h:45px" title="Custom levels &amp; editor"></button>
       <div class="m-line" style="--x:97px;--y:317px;--w:188px;--h:5px"></div>
       <div class="m-tips" id="mTips"></div>
-      <div class="m-line" style="--x:97px;--y:622px;--w:188px;--h:5px"></div>
+      <div class="m-line" style="--x:97px;--y:562px;--w:188px;--h:5px"></div>
+      <button class="mbtn" id="mMods" data-img="Credits" style="--x:97px;--y:597px;--w:188px;--h:48px"><span style="font-size:17px">GAME MODS</span></button>
       <div class="m-line" style="--x:536px;--y:247px;--w:203px;--h:4px"></div>
       <div class="m-line" style="--x:536px;--y:623px;--w:203px;--h:4px"></div>
       <div class="m-line" style="--x:436px;--y:435px;--w:4px;--h:380px"></div>
@@ -86,6 +87,21 @@
       <div id="myLevels" class="cards"></div>
       <h3>Featured</h3>
       <div id="featuredLevels" class="cards"></div>
+    </div>
+  </section>
+
+  <section id="scrMods" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Game Mods</h2><button id="modsHelp">Instructions</button></div>
+    <div class="scroll">
+      <div class="row-btns">
+        <button id="modsInstall" class="primary">Install from JSON</button>
+        <button id="modsPublish">Publish a mod</button>
+      </div>
+      <h3>Installed</h3>
+      <div id="modsInstalled" class="cards"></div>
+      <h3>Community mods</h3>
+      <div class="row-btns"><input id="modsSearch" placeholder="Search mods" style="flex:1;min-width:140px"><button id="modsRefresh">Search / refresh</button></div>
+      <div id="modsCommunity" class="cards" style="margin-top:10px"></div>
     </div>
   </section>
 
@@ -143,6 +159,7 @@
 <script src="rig.js"></script>
 <script src="engine.js"></script>
 <script src="editor.js"></script>
+<script src="mods.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
