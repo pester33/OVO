@@ -28,7 +28,7 @@
   addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 200));
 
   // ---------- screens ----------
-  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions', mods: '#scrMods' };
+  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions', mods: '#scrMods', mp: '#scrMP' };
   function show(name) {
     for (const k in screens) $(screens[k]).hidden = k !== name;
     $('#scrEditor').hidden = true;
@@ -37,6 +37,8 @@
     if (name === 'levels') renderLevels();
     if (name === 'custom') renderCustom();
     if (name === 'mods') window.OvOMods.open();
+    if (name === 'mp') window.OvOMP.openLobby();
+    if (name === 'custom') window.OvOOnline.render();
     if (name === 'menu') refreshMenu && refreshMenu();
     if (name) { game.running = false; OvO.playMusic('MenuTrack'); }
     resize();
@@ -80,6 +82,7 @@
   }
 
   game.onWin = res => {
+    if (window.OvOMP) window.OvOMP.onFinish(res);
     if (current && current.fromEditor) return stopPlaytest('Level complete! ' + res.time.toFixed(2) + 's · ' + res.deaths + ' deaths');
     const blocked = res.cheated && window.OvOHack && OvOHack.safe;
     let best = false;
@@ -153,10 +156,11 @@
     const best = data.id && progress.custom[data.id];
     c.innerHTML = `<canvas></canvas><div class="nm">${esc(data.name || 'Untitled')}</div>
       <div class="meta">${data.author ? 'by ' + esc(data.author) + ' · ' : ''}${data.objs.length} objects${best != null ? ' · best ' + best.toFixed(2) : ''}</div>
-      <div class="acts"><button class="primary" data-a="play">▶ Play</button>${own ? '<button data-a="edit">Edit</button><button data-a="share">Share</button><button data-a="del" class="danger">✕</button>' : '<button data-a="copy">Copy to mine</button><button data-a="share">Share</button>'}</div>`;
+      <div class="acts"><button class="primary" data-a="play">▶ Play</button>${own ? '<button data-a="edit">Edit</button><button data-a="upload">Upload</button><button data-a="share">Share</button><button data-a="del" class="danger">✕</button>' : '<button data-a="copy">Copy to mine</button><button data-a="share">Share</button>'}</div>`;
     c.querySelector('[data-a=play]').onclick = () => playCustom(data);
     const on = (a, f) => { const b = c.querySelector(`[data-a=${a}]`); if (b) b.onclick = f; };
     on('edit', () => openEditor(data));
+    on('upload', () => window.OvOOnline.uploadDialog(data));
     on('share', () => shareLevel(data));
     on('copy', () => { const d = JSON.parse(JSON.stringify(data)); d.id = 'my-' + Date.now(); d.name += ' (copy)'; mine.unshift(d); saveMine(); renderCustom(); });
     on('del', () => dialog(`<h2>Delete?</h2><p>"${esc(data.name)}" will be removed.</p><div class="btns"><button class="danger" data-a="y">Delete</button><button data-a="n">Cancel</button></div>`,
@@ -386,6 +390,11 @@
 
   window.OvOMods.init({ dialog, closeDlg, toast });
   window.OvOMH.init();
+  window.OvOOnline.init({ dialog, closeDlg, toast, play: d => playCustom(d), copyToMine: d => { const c = JSON.parse(JSON.stringify(d)); c.id = 'my-' + Date.now(); mine.unshift(c); saveMine(); renderCustom(); toast('Copied to My levels — you can edit it now.'); } });
+  window.OvOMP.init({ dialog, closeDlg, toast, playMain, playCustom: d => playCustom(d), flash: msg => { const h = document.getElementById('gdHint'); } });
+  $('#mpOpen').onclick = () => show('mp');
+  const mpTog = () => { const on = LS.get('ovo_mp_on', false); $('#mpToggle').textContent = 'Auto-join: ' + (on ? 'ON' : 'OFF'); $('#mpToggle').classList.toggle('primary', on); };
+  $('#mpToggle').onclick = () => { LS.set('ovo_mp_on', !LS.get('ovo_mp_on', false)); mpTog(); }; mpTog();
 
   // ---------- boot ----------
   applyOpts(); resize();
@@ -398,5 +407,5 @@
   if (params.get('play')) playMain(+params.get('play'));
   if (params.get('custom') != null) { const f = window.OVO_FEATURED[+params.get('custom')]; if (f) playCustom(f); }
   if (params.get('edit') != null) { const f = window.OVO_FEATURED[+params.get('edit')]; if (f) openEditor(JSON.parse(JSON.stringify(f))); }
-  window.__ovo = { game, editor, playMain, playCustom, openEditor };
+  window.__ovo = { game, editor, playMain, playCustom, openEditor, current: () => current, show };
 })();

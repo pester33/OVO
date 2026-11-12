@@ -39,6 +39,9 @@
   </div>
 </div>
 
+<div id="mpHud" hidden></div>
+<div id="mpCount" hidden>3</div>
+<div id="mpBoard" hidden></div>
 <div id="rotateHint" hidden>↻ Rotate your phone for a bigger view</div>
 
 <!-- screens -->
@@ -85,6 +88,10 @@
       </div>
       <h3>My levels</h3>
       <div id="myLevels" class="cards"></div>
+      <h3>Online levels</h3>
+      <div class="row-btns"><input id="onlineSearch" placeholder="Search name or author" style="flex:1;min-width:140px">
+        <button id="onlineSearchBtn">Search</button><button data-sort="new" class="on">New</button><button data-sort="top">Top</button><button data-sort="plays">Most played</button></div>
+      <div id="onlineLevels" class="cards" style="margin-top:10px"></div>
       <h3>Featured</h3>
       <div id="featuredLevels" class="cards"></div>
     </div>
@@ -97,11 +104,34 @@
         <button id="modsInstall" class="primary">Install from JSON</button>
         <button id="modsPublish">Publish a mod</button>
       </div>
+      <h3>Built-in mods</h3>
+      <div class="cards"><div class="card mod"><div class="nm">Multiplayer <small>built-in</small></div>
+        <div class="meta">Rooms, live players and races</div>
+        <div class="desc">Join a room with friends: everyone on the same level sees each other run, and anyone can start a race.</div>
+        <div class="acts"><button class="primary" id="mpOpen">Open multiplayer</button><button id="mpToggle">Auto-join: OFF</button></div></div></div>
       <h3>Installed</h3>
       <div id="modsInstalled" class="cards"></div>
       <h3>Community mods</h3>
       <div class="row-btns"><input id="modsSearch" placeholder="Search mods" style="flex:1;min-width:140px"><button id="modsRefresh">Search / refresh</button></div>
       <div id="modsCommunity" class="cards" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <section id="scrMP" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="mods">‹ Back</button><h2>Multiplayer</h2><span></span></div>
+    <div class="scroll mp">
+      <label class="fl">Your name <input id="mpName" maxlength="16"></label>
+      <label class="fl">Room code <input id="mpCode" maxlength="8" placeholder="e.g. AB12C" style="text-transform:uppercase"></label>
+      <div class="row-btns"><button id="mpJoin" class="primary">Join room</button><button id="mpCreate">Create new room</button><button id="mpLeave" class="danger" hidden>Leave room</button></div>
+      <p id="mpStatus" class="mp-status">Not in a room</p>
+      <div id="mpRoomBox" hidden>
+        <p>Room code: <b id="mpRoomCode">—</b> <button id="mpCopy">Copy</button> — send it to your friends.</p>
+        <h3>Players</h3><div id="mpPlayers"></div>
+        <h3>Play together</h3><p class="small">Open any level: everyone in this room on the same level sees each other live.</p>
+        <h3>Race</h3>
+        <div class="row-btns"><select id="mpRaceLevel"></select><button id="mpRace" class="primary">Start race for everyone</button></div>
+        <p class="small">Everyone in the room gets a 3-second countdown and starts the level together. Finish times show up live.</p>
+      </div>
     </div>
   </section>
 
@@ -161,6 +191,8 @@
 <script src="editor.js"></script>
 <script src="mods.js"></script>
 <script src="mh.js"></script>
+<script src="online.js"></script>
+<script src="mp.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
