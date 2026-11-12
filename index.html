@@ -69,6 +69,7 @@
       <div class="m-line" style="--x:436px;--y:435px;--w:4px;--h:380px"></div>
       <div class="m-line" style="--x:635px;--y:435px;--w:4px;--h:380px"></div>
       <canvas id="mChar" width="406" height="760"></canvas>
+      <button class="mbtn" id="mCommunity" data-img="Credits" style="--x:536px;--y:281px;--w:158px;--h:44px"><span style="font-size:14px">COMMUNITY</span></button>
       <button class="mbtn" id="mCustom" data-img="Credits" style="--x:536px;--y:595px;--w:158px;--h:48px"><span style="font-size:15px">CUSTOM LEVELS</span></button>
     </div>
   </section>
@@ -88,10 +89,7 @@
       </div>
       <h3>My levels</h3>
       <div id="myLevels" class="cards"></div>
-      <h3>Online levels</h3>
-      <div class="row-btns"><input id="onlineSearch" placeholder="Search name or author" style="flex:1;min-width:140px">
-        <button id="onlineSearchBtn">Search</button><button data-sort="new" class="on">New</button><button data-sort="top">Top</button><button data-sort="plays">Most played</button></div>
-      <div id="onlineLevels" class="cards" style="margin-top:10px"></div>
+      <div class="row-btns" style="margin-top:14px"><button id="goCommunity" class="primary">🌐 Community levels →</button></div>
       <h3>Featured</h3>
       <div id="featuredLevels" class="cards"></div>
     </div>
@@ -132,6 +130,15 @@
         <div class="row-btns"><select id="mpRaceLevel"></select><button id="mpRace" class="primary">Start race for everyone</button></div>
         <p class="small">Everyone in the room gets a 3-second countdown and starts the level together. Finish times show up live.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="scrCommunity" class="screen" hidden>
+    <div class="topbar"><button class="back" data-go="menu">‹ Back</button><h2>Community levels</h2><button id="commUpload" class="primary">Upload my level</button></div>
+    <div class="scroll">
+      <div class="row-btns"><input id="onlineSearch" placeholder="Search name or author" style="flex:1;min-width:140px">
+        <button id="onlineSearchBtn">Search</button><button data-sort="new" class="on">New</button><button data-sort="top">Top</button><button data-sort="plays">Most played</button></div>
+      <div id="onlineLevels" class="cards" style="margin-top:12px"></div>
     </div>
   </section>
 

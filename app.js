@@ -28,7 +28,7 @@
   addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 200));
 
   // ---------- screens ----------
-  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions', mods: '#scrMods', mp: '#scrMP' };
+  const screens = { menu: '#scrMenu', levels: '#scrLevels', custom: '#scrCustom', options: '#scrOptions', mods: '#scrMods', mp: '#scrMP', community: '#scrCommunity' };
   function show(name) {
     for (const k in screens) $(screens[k]).hidden = k !== name;
     $('#scrEditor').hidden = true;
@@ -38,7 +38,7 @@
     if (name === 'custom') renderCustom();
     if (name === 'mods') window.OvOMods.open();
     if (name === 'mp') window.OvOMP.openLobby();
-    if (name === 'custom') window.OvOOnline.render();
+    if (name === 'community') window.OvOOnline.render();
     if (name === 'menu') refreshMenu && refreshMenu();
     if (name) { game.running = false; OvO.playMusic('MenuTrack'); }
     resize();
@@ -109,7 +109,7 @@
       menu: () => leaveLevel(), edit: () => stopPlaytest(),
     });
   };
-  function leaveLevel() { closeDlg(); if (current && current.fromEditor) return stopPlaytest(); show(current && current.kind === 'custom' ? 'custom' : 'levels'); current = null; }
+  function leaveLevel() { closeDlg(); if (current && current.fromEditor) return stopPlaytest(); show(current && current.kind === 'custom' ? (String(current.data.id || '').startsWith('online-') ? 'community' : 'custom') : 'levels'); current = null; }
 
   function pause() {
     if (!game.running || game.won) return;
@@ -364,6 +364,13 @@
   click('#mEdit', () => show('custom'));
   click('#mCustom', () => show('custom'));
   click('#mMods', () => show('mods'));
+  click('#mCommunity', () => show('community'));
+  $('#goCommunity').onclick = () => show('community');
+  $('#commUpload').onclick = () => {
+    if (!mine.length) return toast('You have no levels yet. Make one in Custom levels → + New level, then come back to upload it.');
+    dialog(`<h2>Upload which level?</h2><div class="btns">${mine.map((l, i) => `<button data-a="u${i}">${esc(l.name || 'Untitled')}</button>`).join('')}<button data-a="c">Cancel</button></div>`,
+      Object.assign({ c: closeDlg }, Object.fromEntries(mine.map((l, i) => ['u' + i, () => window.OvOOnline.uploadDialog(l)]))));
+  };
   click('#mSkins', () => toast('Skins aren’t in the web version yet.'));
   click('#mAch', () => {
     const done = Object.keys(progress.done).length, coins = Object.keys(progress.coins).length;
