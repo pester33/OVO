@@ -171,35 +171,43 @@
         });
         a.run = !!a.st; a.ci = 0; a.prog = 0; a.spd = 0; a.reps = 0; a.dir = a.rot ? a.a : (a.ia || 0) * D2R;
       }
-      const inside = (o, a) => {
-        // object origin inside area OBB
-        const [lx, ly] = rot(o.x - a.x, o.y - a.y, -a.a);
-        const ox = -a.hx * a.w, oy = -a.hy * a.h;
-        return lx >= ox && lx <= ox + a.w && ly >= oy && ly <= oy + a.h;
-      };
+      // shapes overlap (C2 "Is overlapping"), not just the origin being inside
+      const inside = (o, a) => { if (!o.poly) updatePoly(o); if (!a.poly) updatePoly(a); return bbHit(a.bb, o.bb[0], o.bb[1], o.bb[2], o.bb[3]) && !!polyOverlap(o.poly, a.poly); };
       const pinTo = (o, a) => {
         const [lx, ly] = rot(o.x - a.x, o.y - a.y, -a.a);
         o.pin = { a, lx, ly, la: o.a - a.a };
       };
-      // nested areas pin to the most important containing area
-      for (const a of areas) if (a.nest) {
+      this._inside = inside; this._pinTo = pinTo;
+      // nested areas follow the more important area they overlap (or their explicit parent)
+      for (const a of areas) {
         let best = null;
-        for (const b of areas) if (b !== a && b.imp > a.imp && inside(a, b) && (!best || b.imp > best.imp)) best = b;
-        if (a.par >= 0 && this.byUid.get(a.par)) best = this.byUid.get(a.par);
-        if (best) pinTo(a, best);
+        if (a.par >= 0 && this.byUid.get(a.par) && this.byUid.get(a.par).t === 'MoveArea') best = this.byUid.get(a.par);
+        else for (const b of areas) if (b !== a && b.imp > a.imp && inside(a, b) && (!best || b.imp > best.imp)) best = b;
+        if (best && (a.nest || best.imp > a.imp)) pinTo(a, best);
       }
-      const pinnable = this.objs.filter(o => o.t !== 'MoveArea' && o.t !== 'Collider' && o.t !== 'EndFlag' && !o.t.startsWith('SpriteFont') && o.t !== 'LayoutNumber');
+      // on layout start every move area pins the objects it overlaps (highest importance wins), like the original
+      const pinnable = this.objs.filter(o => o.t !== 'MoveArea' && o.t !== 'Collider' && o.t !== 'LayoutNumber' && o.t !== 'MoveTrigger' && o.t !== 'UnmovableSolid' && o.t !== 'UnmovableJumpThrough');
       for (const o of pinnable) {
         let best = null;
-        for (const a of areas) if (a.grab && inside(o, a) && (!best || a.imp > best.imp)) best = a;
+        for (const a of areas) if (inside(o, a) && (!best || a.imp > best.imp)) best = a;
         if (best) pinTo(o, best);
       }
+      this._pinnable = pinnable;
       // order areas: parents before children
       const depth = a => (a.pin ? 1 + depth(a.pin.a) : 0);
       this.areaOrder = areas.slice().sort((p, q) => depth(p) - depth(q));
       this.pinned = this.objs.filter(o => o.pin && o.t !== 'MoveArea');
     }
-    trigger(id) { for (const a of this.areas) if (a.id === id && !a.run) { a.run = true; } }
+    trigger(id) {
+      for (const a of this.areas) if (a.id === id) {
+        if (a.grab && this._pinnable) {
+          updatePoly(a);
+          for (const o of this._pinnable) if (this._inside(o, a)) { this._pinTo(o, a); if (!o.dyn && !o._dynAdded && (SOLID.has(o.t) || JT.has(o.t) || SPIKE.has(o.t) || o.t === 'Tiledbackground')) { o._dynAdded = true; this.dynamic.push(o); } }
+          this.pinned = this.objs.filter(o => o.pin && o.t !== 'MoveArea');
+        }
+        a.run = true; a.ci = 0; a.prog = 0; a.spd = 0; a.reps = 0;
+      }
+    }
     stepAreas(dt) {
       if (!this.areas.length) return;
       for (const a of this.areaOrder) {
@@ -596,12 +604,14 @@
       const p = this.p; if (p.dead) return;
       if (HK().infJump && !p.floor && !(this.byWall(0) || this.byWall(1))) { this.cheated = true; p.dy = -p.jump; p.Pound = false; p.Plunge = false; p.Stun = false; this.clearBuf(); sfx('jump', 0.3); return; }
       // wall jump
-      if (!p.floor && !p.Pound && !p.Stun && (this.byWall(0) || this.byWall(1))) {
-        const bl = this.byWall(0), br = this.byWall(1);
-        p.dx = -p.side * p.maxSpeed; p.dec = 0; p.ignoring = true; sfx('Walljump', 0.45); this.clearBuf();
-        p.dy = -p.jump * 0.8; this.wait(0, () => { p.Walljump = true; });
-        if (this.input.l || this.input.r) { if (bl && p.side === 1) p.side = -1; if (br && p.side === -1) p.side = 1; }
-        this.puff(p.x, p.y + 10, 5);
+      const bl = this.byWall(0), br = this.byWall(1);
+      const recent = p.lastWallT != null && this.clock - p.lastWallT < 0.12;
+      if (!p.floor && !p.Pound && !p.Stun && (bl || br || recent)) {
+        // push away from the wall you're on (or just left), whichever way you're facing or holding
+        const wall = bl ? 0 : br ? 1 : p.lastWall, away = wall === 0 ? 1 : -1;
+        p.dx = away * p.maxSpeed; p.dec = 0; p.ignoring = true; sfx('Walljump', 0.45); this.clearBuf();
+        p.dy = -p.jump * 0.8; p.side = away; p.lastWallT = null; this.wait(0, () => { p.Walljump = true; });
+        this.puff(p.x - away * 8, p.y + 10, 5);
       }
       // wave dash jump
       if (p.WaveDash && p.floor && this.moving()) { p.dy = -p.jump * 0.7; sfx('JumpBoost', 0.4); p.WaveDash = false; p.LongJump = true; this.clearBuf(); }
@@ -668,6 +678,8 @@
       if (p.jumped && !p.Sliding && (bw0 || bw1)) { // jump next to a wall: super jump
         p.dx = -p.side * p.maxSpeed; this.wait(0, () => { p.dy = -p.jump * 1.2; sfx('Superjump', 0.4); });
       }
+      if (!p.floor && (bw0 || bw1)) { p.lastWall = bw0 ? 0 : 1; p.lastWallT = this.clock; }
+      if (p.floor) p.lastWallT = null;
       if (p.Walljump && falling && !bw0 && !bw1) p.Walljump = false;
       if (p.Walljump && p.floor) p.Walljump = false;
       // --- Mirroring (facing follows movement) + dance detection ---
@@ -680,12 +692,12 @@
       const lp = (u, v) => [p.x + u * c - v * s, p.y + u * s + v * c];
       if (Math.round(this.clock * 60) % 2 === 0) {
         const b = lp(0, 48), f = lp(p.side > 0 ? 42 : -42, 30);
-        p.tr1 = this.trace(p.x, p.y, b[0], b[1]); p.tr2 = this.trace(p.x, p.y, f[0], f[1]);
+        p.tr1 = this.trace(p.x, p.y, b[0], b[1]); p.tr2 = this.trace(p.x, p.y, f[0], f[1]); p.tr2side = p.side;
       }
       const t1 = p.tr1, t2 = p.tr2;
       if (t2 != null && t1 == null) {
         const sa = ((t2 + 180) % 360 + 360) % 360;
-        if (between(sa, 0, 30) || between(sa, 150, 180)) this.setG(sa + 90 * p.side);
+        if (between(sa, 0, 30) || between(sa, 150, 180)) this.setG(sa + 90 * (p.tr2side || p.side));
       }
       if (t1 != null && p.floor) {
         const sa = ((t1 + 180) % 360 + 360) % 360;
