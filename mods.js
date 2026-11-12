@@ -31,7 +31,7 @@
     const out = {
       name: String(m.name || '').trim().slice(0, 40), author: String(m.author || '').trim().slice(0, 30),
       version: String(m.version || '1.0').slice(0, 12), description: String(m.description || '').slice(0, 300),
-      physics: {}, colors: {}, levels: [],
+      physics: {}, colors: {}, levels: [], megahack: null,
     };
     if (!out.name) throw new Error('The mod needs a "name"');
     const ph = m.physics || {};
@@ -42,7 +42,14 @@
       if (!Array.isArray(m.levels)) throw new Error('"levels" must be a list');
       out.levels = m.levels.slice(0, 20).map((l, i) => { try { return window.OvOEditor.sanitize(l); } catch (e) { throw new Error(`levels[${i}]: ${e.message}`); } });
     }
-    if (!Object.keys(out.physics).length && !Object.keys(out.colors).length && !out.levels.length) throw new Error('The mod doesn’t change anything — add "physics", "colors" or "levels"');
+    if (m.megahack && typeof m.megahack === 'object') {
+      const h = m.megahack, mh = {};
+      ['noclip', 'infJump', 'practice', 'hitboxes', 'trail', 'info', 'hideHud', 'clickTp', 'safe'].forEach(k => { if (typeof h[k] === 'boolean') mh[k] = h[k]; });
+      if (h.speed != null) mh.speed = clamp(h.speed, 0.1, 3, 1);
+      if (h.zoom != null) mh.zoom = clamp(h.zoom, 0.3, 2.5, 1);
+      if (Object.keys(mh).length) out.megahack = mh;
+    }
+    if (!Object.keys(out.physics).length && !Object.keys(out.colors).length && !out.levels.length && !out.megahack) throw new Error('The mod doesn’t change anything — add "physics", "colors" or "levels"');
     if (JSON.stringify(out).length > 200000) throw new Error('The mod is too big (200 KB max)');
     return out;
   }
@@ -62,8 +69,10 @@
   function install(mod, id) {
     const key = id || ('local-' + mod.name);
     installed = installed.filter(x => x.key !== key && !(x.mod.name === mod.name && x.mod.author === mod.author));
-    installed.unshift({ key, id: id || null, on: true, mod }); save(); apply();
+    installed.unshift({ key, id: id || null, on: true, mod }); save(); apply(); preset(mod);
   }
+
+  function preset(mod) { if (mod.megahack && window.OvOMH) window.OvOMH.applyPreset(mod.megahack); }
 
   // ---------- Supabase (REST) ----------
   async function sb(path, opts) {
@@ -85,6 +94,7 @@
     const p = m.physics; if (p.gravity) bits.push('gravity ×' + p.gravity); if (p.jump) bits.push('jump ×' + p.jump); if (p.speed) bits.push('speed ×' + p.speed);
     if (Object.keys(m.colors).length) bits.push('colours');
     if (m.levels.length) bits.push(m.levels.length + ' level' + (m.levels.length > 1 ? 's' : ''));
+    if (m.megahack) bits.push('Mega Hack preset');
     return bits.join(' · ');
   }
   function renderInstalled() {
@@ -96,7 +106,7 @@
         <div class="meta">${it.mod.author ? 'by ' + esc(it.mod.author) + ' · ' : ''}${esc(summary(it.mod))}</div>
         ${it.mod.description ? `<div class="desc">${esc(it.mod.description)}</div>` : ''}
         <div class="acts"><button class="${it.on ? 'primary' : ''}" data-a="toggle">${it.on ? 'ON' : 'OFF'}</button><button data-a="json">View JSON</button>${it.id ? '' : '<button data-a="pub">Publish</button>'}<button class="danger" data-a="rm">Remove</button></div>`;
-      c.querySelector('[data-a=toggle]').onclick = () => { it.on = !it.on; save(); apply(); renderInstalled(); };
+      c.querySelector('[data-a=toggle]').onclick = () => { it.on = !it.on; save(); apply(); if (it.on) preset(it.mod); renderInstalled(); };
       c.querySelector('[data-a=rm]').onclick = () => { installed = installed.filter(x => x !== it); save(); apply(); renderInstalled(); };
       c.querySelector('[data-a=json]').onclick = () => ui.dialog(`<h2>${esc(it.mod.name)}</h2><textarea readonly id="modJson">${esc(JSON.stringify(it.mod, null, 2))}</textarea><div class="btns"><button data-a="ok" class="primary">Close</button></div>`, { ok: ui.closeDlg });
       const pb = c.querySelector('[data-a=pub]'); if (pb) pb.onclick = () => confirmPublish(it.mod, it);
@@ -154,6 +164,7 @@
         <li><code>name</code> (required), <code>author</code>, <code>version</code>, <code>description</code></li>
         <li><code>physics.gravity</code>, <code>physics.jump</code>, <code>physics.speed</code>: multipliers from 0.25 to 3 (1 = normal)</li>
         <li><code>colors.background</code>, <code>colors.solid</code>, <code>colors.text</code>: hex colours like <code>"#10131c"</code></li>
+        <li><code>megahack</code>: turns Mega Hack options on when the mod is installed or switched ON — <code>noclip</code>, <code>infJump</code>, <code>practice</code>, <code>hitboxes</code>, <code>trail</code>, <code>info</code>, <code>hideHud</code>, <code>clickTp</code>, <code>safe</code> (true/false), <code>speed</code> (0.1–3), <code>zoom</code> (0.3–2.5)</li>
         <li><code>levels</code>: a list of levels (up to 20). The easiest way to get one: build it in the editor, then Share → Download .json, and paste its <code>name</code> and <code>objs</code> here.</li>
       </ul>
       <p><b>Install</b>: press “Install from JSON”, paste the mod and press Install. Installed mods can be turned ON/OFF; several mods stack (physics multiply, later colours win). Mod levels show up in Custom levels.</p>
